@@ -1,0 +1,16 @@
+# CSDiff-Web Dependencies
+# Seção 6.1 do Plano Técnico
+
+# Core functionality
+gitpython>=3.1.40      # Manipulação de repositórios Git
+pandas>=2.0.0          # Análise de dados e geração de CSV
+pyyaml>=6.0            # Leitura de configuração YAML
+requests>=2.31.0       # API do GitHub
+
+# CLI and user experience
+tqdm>=4.65.0           # Barras de progresso
+
+# Testing and development
+pytest>=7.4.0          # Testes automatizados
+black>=23.0.0          # Formatação de código
+mypy>=1.0.0            # Type checking

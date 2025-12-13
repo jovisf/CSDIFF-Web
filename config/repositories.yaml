@@ -1,0 +1,216 @@
+# Configuração de Repositórios para Mineração
+# Seção 3.4 do Plano Técnico
+#
+# CRITÉRIOS DE SELEÇÃO:
+# - 5-10 repositórios por linguagem/extensão
+# - Projetos ativos com histórico de merges
+# - Diversidade: frameworks, libraries, applications
+# - GitHub stars > 1k (indicador de qualidade)
+
+# ============================================================
+# TYPESCRIPT (.ts)
+# ============================================================
+typescript:
+  - name: vscode
+    url: https://github.com/microsoft/vscode
+    description: "Visual Studio Code - 150k+ stars"
+    stars: 150000
+    language: TypeScript
+
+  - name: typescript
+    url: https://github.com/microsoft/TypeScript
+    description: "TypeScript compiler - 95k+ stars"
+    stars: 95000
+    language: TypeScript
+
+  - name: angular
+    url: https://github.com/angular/angular
+    description: "Angular framework - 93k+ stars"
+    stars: 93000
+    language: TypeScript
+
+  - name: nest
+    url: https://github.com/nestjs/nest
+    description: "NestJS framework - 60k+ stars"
+    stars: 60000
+    language: TypeScript
+
+  - name: grafana
+    url: https://github.com/grafana/grafana
+    description: "Grafana monitoring - 58k+ stars"
+    stars: 58000
+    language: TypeScript
+
+  - name: supabase
+    url: https://github.com/supabase/supabase
+    description: "Supabase backend - 63k+ stars"
+    stars: 63000
+    language: TypeScript
+
+  - name: playwright
+    url: https://github.com/microsoft/playwright
+    description: "Playwright testing - 60k+ stars"
+    stars: 60000
+    language: TypeScript
+
+# ============================================================
+# TSX/REACT (.tsx)
+# ============================================================
+tsx:
+  - name: nextjs
+    url: https://github.com/vercel/next.js
+    description: "Next.js React framework - 118k+ stars"
+    stars: 118000
+    language: TypeScript/TSX
+
+  - name: material-ui
+    url: https://github.com/mui/material-ui
+    description: "Material-UI components - 90k+ stars"
+    stars: 90000
+    language: TypeScript/TSX
+
+  - name: ant-design
+    url: https://github.com/ant-design/ant-design
+    description: "Ant Design UI - 89k+ stars"
+    stars: 89000
+    language: TypeScript/TSX
+
+  - name: chakra-ui
+    url: https://github.com/chakra-ui/chakra-ui
+    description: "Chakra UI components - 35k+ stars"
+    stars: 35000
+    language: TypeScript/TSX
+
+  - name: react-native
+    url: https://github.com/facebook/react-native
+    description: "React Native - 114k+ stars"
+    stars: 114000
+    language: TypeScript/TSX
+
+  - name: expo
+    url: https://github.com/expo/expo
+    description: "Expo framework - 28k+ stars"
+    stars: 28000
+    language: TypeScript/TSX
+
+# ============================================================
+# JAVASCRIPT (.js)
+# ============================================================
+javascript:
+  - name: react
+    url: https://github.com/facebook/react
+    description: "React library - 220k+ stars"
+    stars: 220000
+    language: JavaScript
+
+  - name: nodejs
+    url: https://github.com/nodejs/node
+    description: "Node.js runtime - 102k+ stars"
+    stars: 102000
+    language: JavaScript
+
+  - name: vue
+    url: https://github.com/vuejs/vue
+    description: "Vue.js framework - 206k+ stars"
+    stars: 206000
+    language: JavaScript
+
+  - name: express
+    url: https://github.com/expressjs/express
+    description: "Express.js web framework - 63k+ stars"
+    stars: 63000
+    language: JavaScript
+
+  - name: webpack
+    url: https://github.com/webpack/webpack
+    description: "Webpack bundler - 64k+ stars"
+    stars: 64000
+    language: JavaScript
+
+  - name: babel
+    url: https://github.com/babel/babel
+    description: "Babel compiler - 43k+ stars"
+    stars: 43000
+    language: JavaScript
+
+# ============================================================
+# JSX/REACT (.jsx)
+# ============================================================
+jsx:
+  - name: react-router
+    url: https://github.com/remix-run/react-router
+    description: "React Router - 51k+ stars"
+    stars: 51000
+    language: JavaScript/JSX
+
+  - name: redux
+    url: https://github.com/reduxjs/redux
+    description: "Redux state management - 60k+ stars"
+    stars: 60000
+    language: JavaScript/JSX
+
+  - name: create-react-app
+    url: https://github.com/facebook/create-react-app
+    description: "Create React App - 101k+ stars"
+    stars: 101000
+    language: JavaScript/JSX
+
+  - name: gatsby
+    url: https://github.com/gatsbyjs/gatsby
+    description: "Gatsby static site generator - 55k+ stars"
+    stars: 55000
+    language: JavaScript/JSX
+
+# ============================================================
+# MIXED (Projetos com .ts, .tsx, .js, .jsx)
+# ============================================================
+mixed:
+  - name: storybook
+    url: https://github.com/storybookjs/storybook
+    description: "Storybook UI dev tool - 81k+ stars"
+    stars: 81000
+    language: Mixed
+
+  - name: jest
+    url: https://github.com/facebook/jest
+    description: "Jest testing framework - 43k+ stars"
+    stars: 43000
+    language: Mixed
+
+  - name: prettier
+    url: https://github.com/prettier/prettier
+    description: "Prettier code formatter - 48k+ stars"
+    stars: 48000
+    language: Mixed
+
+# ============================================================
+# CONFIGURAÇÕES DE MINERAÇÃO
+# ============================================================
+mining_config:
+  # Meta de triplas por categoria
+  target_triplets_per_language: 100
+
+  # Número mínimo de repositórios a processar por categoria
+  min_repos_per_language: 5
+
+  # Máximo de commits a analisar por repositório (performance)
+  max_commits_per_repo: 1000
+
+  # Extensões válidas
+  valid_extensions:
+    - .ts
+    - .tsx
+    - .js
+    - .jsx
+
+  # Timeout para clone de repositório (segundos)
+  clone_timeout: 300
+
+  # Diretórios a ignorar (node_modules, build, etc)
+  ignore_dirs:
+    - node_modules
+    - dist
+    - build
+    - .next
+    - coverage
+    - __pycache__
