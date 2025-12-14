@@ -55,6 +55,12 @@ from .filters import FileFilter
 # Configurar logging
 logger = logging.getLogger(__name__)
 
+# Caminho para o slow-diff3 (configurável via variável de ambiente)
+SLOW_DIFF3_PATH = os.environ.get(
+    "SLOW_DIFF3_PATH",
+    "/tmp/slow-diff3/src/index.js"  # Caminho padrão
+)
+
 
 class CSDiffWeb:
     """
@@ -139,10 +145,10 @@ class CSDiffWeb:
             logger.warning("Fallback para diff3 puro")
             return self._fallback_diff3(base, left, right)
 
-        # ETAPA 3: Executar diff3
+        # ETAPA 3: Executar slow-diff3
         try:
-            result_exp, has_conflict = self._run_diff3(base_exp, left_exp, right_exp)
-            logger.debug(f"diff3 executado. Conflitos: {has_conflict}")
+            result_exp, has_conflict = self._run_slow_diff3(base_exp, left_exp, right_exp)
+            logger.debug(f"slow-diff3 executado. Conflitos: {has_conflict}")
 
         except Exception as e:
             logger.error(f"Erro ao executar diff3: {e}")
@@ -161,17 +167,18 @@ class CSDiffWeb:
 
         return result, has_conflict, num_conflicts
 
-    def _run_diff3(
+    def _run_slow_diff3(
         self,
         base: str,
         left: str,
         right: str
     ) -> Tuple[str, bool]:
         """
-        Executa diff3 em arquivos temporários.
+        Executa slow-diff3 em arquivos temporários.
 
-        diff3 é invocado com a flag -m (merge), que produz saída
-        no formato de conflitos do Git.
+        slow-diff3 é uma implementação em Node.js do algoritmo diff3
+        desenvolvida por Leonardo dos Anjos. É invocado com a flag -m (merge),
+        que produz saída no formato de conflitos do Git.
 
         Args:
             base: Conteúdo base explodido
@@ -179,15 +186,20 @@ class CSDiffWeb:
             right: Conteúdo right explodido
 
         Returns:
-            Tupla (saída_diff3, tem_conflito)
-            - saída_diff3: Resultado do merge (string)
-            - tem_conflito: True se diff3 retornou código de saída != 0
+            Tupla (saída_slow_diff3, tem_conflito)
+            - saída_slow_diff3: Resultado do merge (string)
+            - tem_conflito: True se há marcadores de conflito na saída
 
         Note:
-            diff3 retorna:
-            - 0: merge bem-sucedido sem conflitos
-            - 1: merge com conflitos
-            - 2: erro na execução
+            ATENÇÃO: Ordem dos argumentos é LEFT, BASE, RIGHT (não base, left, right!)
+            slow-diff3 sempre retorna exit code 0, então detectamos conflitos
+            pela presença de marcadores <<<<<<< na saída.
+
+            Marcadores usados pelo slow-diff3:
+            <<<<<<<  (início do conflito)
+            |||||||  (separador base)
+            =======  (separador entre left e right)
+            >>>>>>>  (fim do conflito)
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             base_file = Path(tmpdir) / "base"
@@ -199,22 +211,85 @@ class CSDiffWeb:
             left_file.write_text(left, encoding="utf-8")
             right_file.write_text(right, encoding="utf-8")
 
-            # Executar diff3
-            # Formato: diff3 -m <left> <base> <right>
+            # Executar slow-diff3
+            # ATENÇÃO: Ordem é LEFT, BASE, RIGHT (diferente do diff3 GNU!)
+            # Formato: node slow-diff3/src/index.js <left> <base> <right> -m
             result = subprocess.run(
-                ["diff3", "-m", str(left_file), str(base_file), str(right_file)],
+                [
+                    "node",
+                    SLOW_DIFF3_PATH,
+                    str(left_file),   # LEFT primeiro
+                    str(base_file),   # BASE no meio
+                    str(right_file),  # RIGHT por último
+                    "-m"              # flag de merge
+                ],
                 capture_output=True,
                 text=True,
                 encoding="utf-8"
             )
 
-            # diff3 retorna 0 se sem conflitos, 1 se com conflitos, 2 se erro
-            has_conflict = result.returncode != 0
-
-            # Saída pode estar em stdout ou stderr dependendo da versão
+            # slow-diff3 sempre retorna 0, então detectamos conflito pela saída
             output = result.stdout if result.stdout else result.stderr
 
+            # Detectar conflito pela presença de marcadores
+            has_conflict = "<<<<<<<" in output
+
             return output, has_conflict
+
+    def _run_slow_diff3_debug(
+        self,
+        base: str,
+        left: str,
+        right: str
+    ) -> str:
+        """
+        Executa slow-diff3 em modo debug para análise de matchings.
+
+        Útil para entender como o algoritmo está casando as linhas
+        e diagnosticar problemas de alinhamento.
+
+        Args:
+            base: Conteúdo base explodido
+            left: Conteúdo left explodido
+            right: Conteúdo right explodido
+
+        Returns:
+            String com informações de debug (matchings L-B e B-R, chunks)
+
+        Example:
+            >>> csdiff = CSDiffWeb(".ts")
+            >>> debug_info = csdiff._run_slow_diff3_debug(base, left, right)
+            >>> print(debug_info)
+            L-B matching:
+            1-1    (L)    |    1-1    (B)
+            ...
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_file = Path(tmpdir) / "base"
+            left_file = Path(tmpdir) / "left"
+            right_file = Path(tmpdir) / "right"
+
+            # Escrever conteúdos em arquivos temporários
+            base_file.write_text(base, encoding="utf-8")
+            left_file.write_text(left, encoding="utf-8")
+            right_file.write_text(right, encoding="utf-8")
+
+            # Executar slow-diff3 em modo debug (-d)
+            result = subprocess.run(
+                [
+                    "node",
+                    SLOW_DIFF3_PATH,
+                    str(left_file),
+                    str(base_file),
+                    str(right_file),
+                    "-d"  # flag de debug
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8"
+            )
+
+            return result.stdout
 
     def _fallback_diff3(
         self,
@@ -223,7 +298,7 @@ class CSDiffWeb:
         right: str
     ) -> Tuple[str, bool, int]:
         """
-        Fallback para diff3 puro (sem explosão).
+        Fallback para slow-diff3 puro (sem explosão).
 
         Usado quando:
         - Arquivo é minificado
@@ -238,9 +313,9 @@ class CSDiffWeb:
         Returns:
             Tupla (resultado, tem_conflito, num_conflitos)
         """
-        logger.debug("Usando diff3 puro (sem separadores)")
+        logger.debug("Usando slow-diff3 puro (sem separadores)")
 
-        result, has_conflict = self._run_diff3(base, left, right)
+        result, has_conflict = self._run_slow_diff3(base, left, right)
         num_conflicts = result.count("<<<<<<<")
 
         return result, has_conflict, num_conflicts

@@ -8,11 +8,63 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 ## [Unreleased]
 
 ### Planejado
-- Docker container para reprodutibilidade
 - Visualizações gráficas (matplotlib/seaborn)
 - Interface web para demonstrações
 - Suporte para Python (.py)
 - Suporte para Go (.go)
+- Otimizações customizadas do slow-diff3 para Web
+
+---
+
+## [1.1.0] - 2025-12-13
+
+### MUDANÇA IMPORTANTE: Migração para slow-diff3
+
+Substituição do diff3 GNU pelo slow-diff3, implementação em Node.js do algoritmo diff3 desenvolvida por Leonardo dos Anjos.
+
+#### Adicionado
+- **Integração slow-diff3**
+  - Método `_run_slow_diff3()` substituindo `_run_diff3()`
+  - Método `_run_slow_diff3_debug()` para análise de matchings
+  - Variável de ambiente `SLOW_DIFF3_PATH` configurável
+
+- **Docker Completo**
+  - Dockerfile com Node.js e slow-diff3
+  - docker-compose.yml para orquestração
+  - .dockerignore para build otimizado
+  - Guia completo: [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md)
+
+- **Testes de Integração**
+  - Novo arquivo: `tests/test_slow_diff3_integration.py`
+  - 14 novos testes (instalação, comportamento, debug, integração)
+  - Total de testes: 42 (todos passando ✅)
+
+- **Documentação**
+  - [docs/SLOW_DIFF3_INTEGRATION.md](docs/SLOW_DIFF3_INTEGRATION.md) - Guia completo da migração
+  - [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md) - Guia de uso do Docker
+
+#### Mudado
+- **Core Pipeline**: `_run_diff3()` → `_run_slow_diff3()`
+- **Ordem de argumentos**: `left, base, right` (era `base, left, right`)
+- **Detecção de conflito**: Via marcadores na saída (era via exit code)
+- **Fallback**: Também usa slow-diff3 (era diff3 GNU)
+
+#### Diferenças de Comportamento
+- slow-diff3 sempre retorna exit code 0
+- Marcadores incluem versão BASE: `|||||||`
+- Modo debug disponível com flag `-d`
+- Performance: ~+50% overhead (aceitável para pesquisa)
+
+#### Justificativa
+1. Implementação do autor do TCC de referência (Leonardo dos Anjos)
+2. Modo debug para análise detalhada de matchings
+3. Maior controle sobre algoritmo para futuras otimizações
+4. Alinhamento com pesquisa sobre Alignment Problem
+
+#### Repositório slow-diff3
+- **URL**: https://github.com/leonardoAnjos16/slow-diff3
+- **Linguagem**: JavaScript/Node.js
+- **Licença**: Open source
 
 ---
 
