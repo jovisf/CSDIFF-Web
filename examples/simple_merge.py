@@ -4,7 +4,10 @@ Demonstra merge de três versões de um arquivo TypeScript.
 """
 
 import sys
-sys.path.insert(0, '/home/joaovictor/Documents/MergeAndCode')
+from pathlib import Path
+
+# Adicionar src/ ao path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.csdiff_web import CSDiffWeb
 

@@ -177,7 +177,6 @@ def run_analysis_example():
         )
 
         results = runner.run_experiments(
-            tools=['csdiff-web', 'diff3']
         )
 
         print(f"\n✓ Experimentos concluídos")
@@ -218,13 +217,13 @@ def run_analysis_example():
         print("\n" + "=" * 60)
         print("RELATÓRIO MARKDOWN GERADO")
         print("=" * 60)
-        print(md_report.read_text())
+        print(md_report.read_text(encoding='utf-8'))
 
         # FASE 5: Exibir tabela LaTeX
         print("\n" + "=" * 60)
         print("TABELA LATEX GERADA")
         print("=" * 60)
-        print(latex_table.read_text())
+        print(latex_table.read_text(encoding='utf-8'))
 
         # FASE 6: Análise detalhada
         print("\n" + "=" * 60)

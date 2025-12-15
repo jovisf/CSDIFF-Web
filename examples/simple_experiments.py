@@ -137,9 +137,7 @@ def run_example():
 
         # Executar experimentos
         print("\nExecutando experimentos...")
-        results = runner.run_experiments(
-            tools=['csdiff-web', 'diff3', 'slow-diff3']
-        )
+        results = runner.run_experiments()
 
         # Exibir resultados
         print("\n" + "=" * 60)

@@ -269,24 +269,24 @@ class ResultCollector:
                 f.write("=" * 60 + "\n")
                 f.write(f"FERRAMENTA: {tool_name.upper()}\n")
                 f.write("=" * 60 + "\n")
-                f.write(f"Total de execuções:     {tool_metrics['total_executions']}\n")
-                f.write(f"Execuções bem-sucedidas: {tool_metrics['successful_executions']}\n")
-                f.write(f"Execuções falhadas:      {tool_metrics['failed_executions']}\n")
+                f.write(f"Total de execucoes:     {tool_metrics['total_executions']}\n")
+                f.write(f"Execucoes bem-sucedidas: {tool_metrics['successful_executions']}\n")
+                f.write(f"Execucoes falhadas:      {tool_metrics['failed_executions']}\n")
                 f.write(f"Taxa de sucesso:         {tool_metrics['success_rate']:.1f}%\n\n")
 
                 f.write(f"Total de conflitos:      {tool_metrics['total_conflicts']}\n")
-                f.write(f"Média de conflitos:      {tool_metrics['avg_conflicts']:.2f}\n")
+                f.write(f"Media de conflitos:      {tool_metrics['avg_conflicts']:.2f}\n")
                 f.write(f"Min/Max conflitos:       {tool_metrics['min_conflicts']} / {tool_metrics['max_conflicts']}\n\n")
 
-                f.write(f"Tempo médio:             {tool_metrics['avg_time']:.3f}s\n")
+                f.write(f"Tempo medio:             {tool_metrics['avg_time']:.3f}s\n")
                 f.write(f"Min/Max tempo:           {tool_metrics['min_time']:.3f}s / {tool_metrics['max_time']:.3f}s\n\n")
 
                 f.write(f"Total de erros:          {tool_metrics['total_errors']}\n")
-                f.write(f"Erros únicos:            {tool_metrics['unique_errors']}\n\n")
+                f.write(f"Erros unicos:            {tool_metrics['unique_errors']}\n\n")
 
             # Comparação
             f.write("=" * 60 + "\n")
-            f.write("COMPARAÇÃO\n")
+            f.write("COMPARACAO\n")
             f.write("=" * 60 + "\n")
 
             if 'csdiff-web' in metrics and 'diff3' in metrics:
@@ -296,22 +296,22 @@ class ResultCollector:
                 reduction = diff3_conflicts - csdiff_conflicts
                 reduction_pct = (reduction / diff3_conflicts * 100) if diff3_conflicts > 0 else 0
 
-                f.write(f"Redução de conflitos (CSDiff-Web vs diff3):\n")
+                f.write(f"Reducao de conflitos (CSDiff-Web vs diff3):\n")
                 f.write(f"  diff3:      {diff3_conflicts} conflitos\n")
                 f.write(f"  CSDiff-Web: {csdiff_conflicts} conflitos\n")
-                f.write(f"  Redução:    {reduction} ({reduction_pct:.1f}%)\n\n")
+                f.write(f"  Reducao:    {reduction} ({reduction_pct:.1f}%)\n\n")
 
         logger.info(f"Resumo gerado: {summary_path}")
         return summary_path
 
     def get_statistics(self) -> Dict:
-        """Retorna estatísticas globais."""
+        """Retorna estatisticas globais."""
         return self.stats.copy()
 
     def print_statistics(self):
-        """Imprime estatísticas formatadas."""
+        """Imprime estatisticas formatadas."""
         print("\n" + "=" * 60)
-        print("ESTATÍSTICAS DO COLETOR")
+        print("ESTATISTICAS DO COLETOR")
         print("=" * 60)
         print(f"Total de triplas:        {self.stats['total_triplets']}")
         print(f"Triplas bem-sucedidas:   {self.stats['successful_triplets']}")

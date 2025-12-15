@@ -6,7 +6,6 @@ Executa CSDiff-Web + diff3 + slow-diff3 em triplas mineradas.
 Uso:
     python3 scripts/run_experiments.py
     python3 scripts/run_experiments.py --max-triplets 50
-    python3 scripts/run_experiments.py --tools csdiff-web diff3
 """
 
 import sys

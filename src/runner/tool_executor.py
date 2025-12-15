@@ -218,7 +218,7 @@ class ToolExecutor:
         base_file: Path,
         left_file: Path,
         right_file: Path,
-        script_path: str = "../slow-diff3/src/index.js"
+        script_path: str = "./slow-diff3/src/index.js"
     ) -> Dict:
         """
         Executa slow_diff3 em uma tripla.
