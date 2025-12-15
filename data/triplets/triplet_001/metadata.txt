@@ -1,0 +1,12 @@
+Triplet ID: 1
+Original File: packages/react-router-dev/vite/rsc/plugin.ts
+Extension: .ts
+Commit SHA: 57cd23457d047b4fa58cc38295659b45f0cf33a2
+Base SHA: 22117d3a9088b8c766e8173919073513d431df09
+Left SHA: 653010f499b707c8b5e4485f6169cc82d20f821f
+Right SHA: 0206276a4fdf38fe7894c29d9c0ae762629b5d70
+
+File Sizes:
+  Base: 23092 bytes
+  Left: 23518 bytes
+  Right: 23233 bytes

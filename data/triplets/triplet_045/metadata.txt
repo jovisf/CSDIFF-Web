@@ -1,0 +1,12 @@
+Triplet ID: 45
+Original File: packages/react-scripts/config/webpack.config.js
+Extension: .js
+Commit SHA: 0a7b0951c1b96bfd3ca1da7af69cf39bc483c642
+Base SHA: fddce8a9e21bf68f37054586deb0c8636a45f50b
+Left SHA: 6d3dbedd9171d73d70bc0e8c3ffe2e921a494dc0
+Right SHA: bbd5a6015561c6ff8a18d99b4f852c9b10e55198
+
+File Sizes:
+  Base: 34633 bytes
+  Left: 33360 bytes
+  Right: 34912 bytes

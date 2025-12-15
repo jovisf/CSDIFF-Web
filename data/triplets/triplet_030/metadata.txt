@@ -1,0 +1,12 @@
+Triplet ID: 30
+Original File: test/combineReducers.spec.ts
+Extension: .ts
+Commit SHA: b24dd683231621cb7e61b2c1320984163adcde6f
+Base SHA: d4d08d0438711ea7528fc3c5c11da00cd120a991
+Left SHA: abaabba00e60e026d5b0573a19974c90183f6abd
+Right SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
+
+File Sizes:
+  Base: 11782 bytes
+  Left: 11801 bytes
+  Right: 11608 bytes

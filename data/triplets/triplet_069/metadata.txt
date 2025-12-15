@@ -1,0 +1,12 @@
+Triplet ID: 69
+Original File: docs/src/pages/components/progress/CircularIntegration.js
+Extension: .js
+Commit SHA: 512896973499adbbda057e7f3685d1b23cc02de9
+Base SHA: d0bfcb4f11fd3904b1e235d80fbfe23758de8372
+Left SHA: cd8aeb64a9038ae9cb8ecf1cd7fd8a2bfea2d6b6
+Right SHA: 7e97b7f366cc96d46ea81a7cef854cca576cde1b
+
+File Sizes:
+  Base: 2386 bytes
+  Left: 2393 bytes
+  Right: 2213 bytes
