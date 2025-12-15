@@ -2,7 +2,7 @@
 RESUMO DOS EXPERIMENTOS - CSDiff-Web
 ============================================================
 
-Data: 2025-12-15 05:00:31
+Data: 2025-12-15 06:24:32
 Total de triplas: 184
 Triplas bem-sucedidas: 184
 Triplas falhadas: 0
@@ -15,12 +15,12 @@ Execucoes bem-sucedidas: 182
 Execucoes falhadas:      2
 Taxa de sucesso:         98.9%
 
-Total de conflitos:      471
-Media de conflitos:      2.59
-Min/Max conflitos:       0 / 30
+Total de conflitos:      219
+Media de conflitos:      1.20
+Min/Max conflitos:       0 / 19
 
-Tempo medio:             0.587s
-Min/Max tempo:           0.166s / 5.176s
+Tempo medio:             0.131s
+Min/Max tempo:           0.044s / 4.082s
 
 Total de erros:          2
 Erros unicos:            1
@@ -37,8 +37,8 @@ Total de conflitos:      448
 Media de conflitos:      2.43
 Min/Max conflitos:       0 / 30
 
-Tempo medio:             0.177s
-Min/Max tempo:           0.158s / 0.238s
+Tempo medio:             0.173s
+Min/Max tempo:           0.155s / 0.299s
 
 Total de erros:          0
 Erros unicos:            0
@@ -55,8 +55,8 @@ Total de conflitos:      242
 Media de conflitos:      1.32
 Min/Max conflitos:       0 / 16
 
-Tempo medio:             0.110s
-Min/Max tempo:           0.082s / 1.163s
+Tempo medio:             0.113s
+Min/Max tempo:           0.081s / 1.123s
 
 Total de erros:          0
 Erros unicos:            0
@@ -66,6 +66,6 @@ COMPARACAO
 ============================================================
 Reducao de conflitos (CSDiff-Web vs diff3):
   diff3:      448 conflitos
-  CSDiff-Web: 471 conflitos
-  Reducao:    -23 (-5.1%)
+  CSDiff-Web: 219 conflitos
+  Reducao:    229 (51.1%)
 

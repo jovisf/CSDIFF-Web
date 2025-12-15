@@ -80,6 +80,8 @@ class CSDiffWeb:
         # Nota: O SepMerge Java chama removeMarkers aqui
         return self.postprocessor.reconstruct(merged_exp, self.extension)
 
+    # Em src/core/csdiff_web.py
+
     def _run_raw_diff3(self, base: str, left: str, right: str) -> Tuple[str, bool]:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_path = Path(tmpdir) / "base"
@@ -90,16 +92,26 @@ class CSDiffWeb:
             left_path.write_text(left, encoding="utf-8")
             right_path.write_text(right, encoding="utf-8")
 
-            # Executa diff3 -m
-            cmd = ["diff3", "-m", str(left_path), str(base_path), str(right_path)]
+            # Usamos git merge-file com --diff3 para garantir que o bloco ||||||| (base) apareça.
+            # O flag -p imprime no stdout (capture_output pega isso).
+            cmd = [
+                "git", "merge-file", 
+                "-p", 
+                "--diff3", 
+                str(left_path), 
+                str(base_path), 
+                str(right_path)
+            ]
+
             result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
             
-            # diff3 retorna 0 (sem conflito) ou 1 (conflito)
-            # O output pode estar no stdout
-            content = result.stdout
-            has_conflict = result.returncode != 0
+            # git merge-file retorna:
+            # 0: sem conflito
+            # positivo: com conflito
+            # negativo: erro
+            has_conflict = result.returncode > 0
             
-            return content, has_conflict
+            return result.stdout, has_conflict
 
     def get_statistics(self, base: str, left: str, right: str) -> dict:
         return {
