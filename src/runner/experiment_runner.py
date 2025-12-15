@@ -197,16 +197,13 @@ class ExperimentRunner:
 
     def run_experiments(
         self,
-        max_triplets: Optional[int] = None,
-        tools: List[str] = None
+        max_triplets: Optional[int] = None
     ) -> Dict:
         """
         Executa experimentos em triplas.
 
         Args:
             max_triplets: Máximo de triplas a processar (None = todas)
-            tools: Lista de ferramentas a executar (padrão: todas)
-                   ['csdiff-web', 'diff3', 'slow-diff3']
 
         Returns:
             Dict com resultados:
@@ -217,8 +214,6 @@ class ExperimentRunner:
                 'metrics': {...}
             }
         """
-        if tools is None:
-            tools = ['csdiff-web', 'diff3', 'slow-diff3']
 
         # Carregar triplas
         logger.info("Carregando triplas...")
@@ -238,7 +233,7 @@ class ExperimentRunner:
 
         for triplet in tqdm(triplets, desc="Executando experimentos"):
             try:
-                self._process_single_triplet(triplet, tools)
+                self._process_single_triplet(triplet)
                 self.stats['triplets_processed'] += 1
 
             except Exception as e:
@@ -261,13 +256,12 @@ class ExperimentRunner:
             'metrics': metrics
         }
 
-    def _process_single_triplet(self, triplet: Dict, tools: List[str]):
+    def _process_single_triplet(self, triplet: Dict):
         """
         Processa uma única tripla com todas as ferramentas.
 
         Args:
             triplet: Dict com dados da tripla
-            tools: Lista de ferramentas a executar
         """
         # Executar ferramentas
         tool_results = self.executor.execute_all(

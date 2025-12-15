@@ -138,7 +138,7 @@ def run_example():
         # Executar experimentos
         print("\nExecutando experimentos...")
         results = runner.run_experiments(
-            tools=['csdiff-web', 'diff3']  # Apenas CSDiff-Web e diff3 (Mergiraf opcional)
+            tools=['csdiff-web', 'diff3', 'slow-diff3']
         )
 
         # Exibir resultados

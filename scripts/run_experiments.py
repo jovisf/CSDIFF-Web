@@ -53,13 +53,6 @@ def main():
         help='Número máximo de triplas a processar (padrão: todas)'
     )
     parser.add_argument(
-        '--tools',
-        nargs='+',
-        choices=['csdiff-web', 'diff3', 'slow-diff3'],
-        default=['csdiff-web', 'diff3', 'slow-diff3'],
-        help='Ferramentas a executar (padrão: todas)'
-    )
-    parser.add_argument(
         '--timeout',
         type=int,
         default=60,
@@ -108,14 +101,13 @@ def main():
         print("EXECUTANDO EXPERIMENTOS")
         print("=" * 60)
         print(f"Triplas: {triplet_count}")
-        print(f"Ferramentas: {', '.join(args.tools)}")
+        print(f"Ferramentas: csdiff-web, diff3, slow-diff3")
         print(f"Timeout: {args.timeout}s")
         print(f"Resultados: {args.results_dir}")
         print("=" * 60 + "\n")
 
         results = runner.run_experiments(
-            max_triplets=args.max_triplets,
-            tools=args.tools
+            max_triplets=args.max_triplets
         )
 
         # Exibir resultados
