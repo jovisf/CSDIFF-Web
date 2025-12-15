@@ -1,0 +1,12 @@
+Triplet ID: 15
+Original File: test/typescript/store.ts
+Extension: .ts
+Commit SHA: f0593c47170d6cf6b62bce585680d1e2d337b147
+Base SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
+Left SHA: 02073c492a3113fac9fb0c6395b47fed8eed24b9
+Right SHA: fc00cae8e5574da485be3e7df5aa8e897e2db264
+
+File Sizes:
+  Base: 4619 bytes
+  Left: 4890 bytes
+  Right: 4643 bytes

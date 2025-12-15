@@ -1,0 +1,88 @@
+(taes) C:\Users\luiza\CSDIFF-Web>python scripts/analyze_results.py data/results/results_20251215_043157.csv
+============================================================
+ANÁLISE DE RESULTADOS - CSDiff-Web
+============================================================
+CSV:    data\results\results_20251215_043157.csv
+Output: data\reports
+============================================================
+
+Carregando dados...
+Calculando métricas...
+
+============================================================
+ANÁLISE ESTATÍSTICA - CSDiff-Web
+============================================================
+Total de triplas: 184
+
+============================================================
+FALSE POSITIVES / FALSE NEGATIVES
+============================================================
+
+CSDIFF-WEB (baseline: diff3):
+  True Positives:  179
+  False Positives: 0
+  True Negatives:  2
+  False Negatives: 3
+
+  Precision: 1.000
+  Recall:    0.984
+  F1-Score:  0.992
+  Accuracy:  0.984
+
+============================================================
+COMPARAÇÃO DE CONFLITOS
+============================================================
+
+CSDIFF-WEB:
+  Total de triplas:     184
+  Com conflito:         179 (97.3%)
+  Sem conflito:         5
+
+DIFF3:
+  Total de triplas:     184
+  Com conflito:         182 (98.9%)
+  Sem conflito:         2
+
+SLOW-DIFF3:
+  Total de triplas:     184
+  Com conflito:         125 (67.9%)
+  Sem conflito:         59
+
+REDUÇÃO (CSDiff-Web vs diff3):
+  Absoluta: 3 conflitos
+  Relativa: 1.6%
+
+============================================================
+TEMPO DE EXECUÇÃO
+============================================================
+
+CSDIFF-WEB:
+  Média:   0.7062s
+  Mediana: 0.2294s
+  Min/Max: 0.1665s / 25.0309s
+
+DIFF3:
+  Média:   0.1769s
+  Mediana: 0.1731s
+  Min/Max: 0.1567s / 0.2198s
+
+SLOW-DIFF3:
+  Média:   0.1158s
+  Mediana: 0.0930s
+  Min/Max: 0.0823s / 1.1940s
+
+============================================================
+
+Gerando relatórios...
+
+============================================================
+RELATÓRIOS GERADOS
+============================================================
+Markdown: data\reports\analysis_20251215_043633.md
+LaTeX:    data\reports\table_20251215_043633.tex
+============================================================
+
+✅ Análise concluída!
+
+Para ver o relatório:
+  cat data\reports\analysis_20251215_043633.md

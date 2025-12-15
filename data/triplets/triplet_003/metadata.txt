@@ -1,0 +1,12 @@
+Triplet ID: 3
+Original File: packages/react-router/lib/components.tsx
+Extension: .tsx
+Commit SHA: 5cae3b5fd10e6da90758a6ddf7753ba4684d918f
+Base SHA: 4a5e3332aa20cdf7011d5ebd17c9b78a18123f5b
+Left SHA: 1954672a29b0adab00531e62dc5dc5627b560a80
+Right SHA: 77d22facf73ac0092d46d1d099c73ef759a5ba29
+
+File Sizes:
+  Base: 60503 bytes
+  Left: 60705 bytes
+  Right: 60564 bytes

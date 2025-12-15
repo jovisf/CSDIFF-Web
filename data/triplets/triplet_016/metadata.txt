@@ -1,0 +1,12 @@
+Triplet ID: 16
+Original File: src/types/store.ts
+Extension: .ts
+Commit SHA: f0593c47170d6cf6b62bce585680d1e2d337b147
+Base SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
+Left SHA: 02073c492a3113fac9fb0c6395b47fed8eed24b9
+Right SHA: fc00cae8e5574da485be3e7df5aa8e897e2db264
+
+File Sizes:
+  Base: 9034 bytes
+  Left: 9154 bytes
+  Right: 9044 bytes

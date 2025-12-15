@@ -118,6 +118,7 @@ def main():
         repos_dir=args.repos_dir,
         triplets_dir=args.output_dir,
         target_triplets=args.max_triplets
+        #target_triplets=10 # Para forçar a olhar outros repositórios durante testes --max-repos: 5 --max-triplets: 50
     )
 
     # Executar mineração
