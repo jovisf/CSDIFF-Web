@@ -11,7 +11,7 @@ DEFINIÇÕES:
 - True Negative (TN): Ferramenta não detectou conflito E não há conflito real
 - False Negative (FN): Ferramenta não detectou conflito MAS há conflito real
 
-BASELINE: diff3 é considerado ground truth (referência)
+BASELINE: slow-diff3 é considerado ground truth (referência)
 """
 
 import pandas as pd
@@ -71,16 +71,16 @@ class MetricsAnalyzer:
     def calculate_fp_fn(
         self,
         tool_col: str,
-        baseline_col: str = 'diff3_has_conflict'
+        baseline_col: str = 'slow_diff3_has_conflict'
     ) -> Dict:
         """
         Calcula False Positives e False Negatives.
 
-        Usa diff3 como baseline (ground truth).
+        Usa slow_diff3 como baseline (ground truth).
 
         Args:
             tool_col: Coluna da ferramenta a analisar (ex: 'csdiff_web_has_conflict')
-            baseline_col: Coluna do baseline (padrão: 'diff3_has_conflict')
+            baseline_col: Coluna do baseline (padrão: 'slow_diff3_has_conflict')
 
         Returns:
             Dict com métricas:
@@ -135,7 +135,7 @@ class MetricsAnalyzer:
             Dict com comparações:
             {
                 'csdiff-web': {'total': int, 'with_conflict': int, 'rate': float},
-                'diff3': {...},
+                'slow-diff3': {...},
                 'reduction': {'absolute': int, 'relative': float}
             }
         """
@@ -162,13 +162,13 @@ class MetricsAnalyzer:
                 'conflict_rate': float(rate)
             }
 
-        # Calcular redução (CSDiff-Web vs diff3)
-        if 'csdiff-web' in results and 'diff3' in results:
+        # Calcular redução (CSDiff-Web vs slow-diff3)
+        if 'csdiff-web' in results and 'slow-diff3' in results:
             csdiff_conflicts = results['csdiff-web']['with_conflict']
-            diff3_conflicts = results['diff3']['with_conflict']
+            slow_conflicts = results['slow-diff3']['with_conflict']
 
-            absolute_reduction = diff3_conflicts - csdiff_conflicts
-            relative_reduction = (absolute_reduction / diff3_conflicts * 100) if diff3_conflicts > 0 else 0.0
+            absolute_reduction = slow_conflicts - csdiff_conflicts
+            relative_reduction = (absolute_reduction / slow_conflicts * 100) if slow_conflicts > 0 else 0.0
 
             results['reduction'] = {
                 'absolute': int(absolute_reduction),
@@ -255,7 +255,7 @@ class MetricsAnalyzer:
         # Calcular FP/FN para CSDiff-Web
         fp_fn_metrics = {}
         if 'csdiff_web_has_conflict' in self.df.columns:
-            fp_fn_metrics['csdiff-web'] = self.calculate_fp_fn('csdiff_web_has_conflict')
+            fp_fn_metrics['csdiff-web'] = self.calculate_fp_fn('csdiff_web_has_conflict', baseline_col='slow_diff3_has_conflict')
 
         # Outras métricas
         conflict_comparison = self.compare_conflict_rates()
@@ -290,7 +290,7 @@ class MetricsAnalyzer:
             print("=" * 60)
 
             for tool, metrics in summary['fp_fn_analysis'].items():
-                print(f"\n{tool.upper()} (baseline: diff3):")
+                print(f"\n{tool.upper()} (baseline: slow-diff3):")
                 print(f"  True Positives:  {metrics['TP']}")
                 print(f"  False Positives: {metrics['FP']}")
                 print(f"  True Negatives:  {metrics['TN']}")
@@ -317,7 +317,7 @@ class MetricsAnalyzer:
 
             if 'reduction' in summary['conflict_comparison']:
                 red = summary['conflict_comparison']['reduction']
-                print(f"\nREDUÇÃO (CSDiff-Web vs diff3):")
+                print(f"\nREDUÇÃO (CSDiff-Web vs slow-diff3):")
                 print(f"  Absoluta: {red['absolute']} conflitos")
                 print(f"  Relativa: {red['relative']:.1f}%")
 

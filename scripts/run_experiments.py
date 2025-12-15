@@ -131,19 +131,19 @@ def main():
             print(f"  Média de conflitos:      {metrics['avg_conflicts']:.2f}")
             print(f"  Tempo médio:             {metrics['avg_time']:.3f}s")
 
-        # Comparação CSDiff-Web vs diff3
-        if 'csdiff-web' in results['metrics'] and 'diff3' in results['metrics']:
+        # Comparação CSDiff-Web vs slow-diff3
+        if 'csdiff-web' in results['metrics'] and 'slow-diff3' in results['metrics']:
             csdiff_conflicts = results['metrics']['csdiff-web']['total_conflicts']
-            diff3_conflicts = results['metrics']['diff3']['total_conflicts']
+            slow_conflicts = results['metrics']['slow-diff3']['total_conflicts']
 
-            if diff3_conflicts > 0:
-                reduction = diff3_conflicts - csdiff_conflicts
-                reduction_pct = (reduction / diff3_conflicts * 100)
+            if slow_conflicts > 0:
+                reduction = slow_conflicts - csdiff_conflicts
+                reduction_pct = (reduction / slow_conflicts * 100)
 
                 print("\n" + "=" * 60)
-                print("COMPARAÇÃO: CSDiff-Web vs diff3")
+                print("COMPARAÇÃO: CSDiff-Web vs slow-diff3")
                 print("=" * 60)
-                print(f"diff3:      {diff3_conflicts} conflitos")
+                print(f"slow-diff3:      {slow_conflicts} conflitos")
                 print(f"CSDiff-Web: {csdiff_conflicts} conflitos")
                 print(f"Redução:    {reduction} conflitos ({reduction_pct:.1f}%)")
                 print("=" * 60)

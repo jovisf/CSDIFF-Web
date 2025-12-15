@@ -1,8 +1,8 @@
-(taes) C:\Users\luiza\CSDIFF-Web>python scripts/analyze_results.py data/results/results_20251215_062432.csv
+(taes) C:\Users\luiza\CSDIFF-Web>python scripts/analyze_results.py data/results/results_20251215_074220.csv
 ============================================================
 ANÁLISE DE RESULTADOS - CSDiff-Web
 ============================================================
-CSV:    data\results\results_20251215_062432.csv
+CSV:    data\results\results_20251215_074220.csv
 Output: data\reports
 ============================================================
 
@@ -18,16 +18,16 @@ Total de triplas: 184
 FALSE POSITIVES / FALSE NEGATIVES
 ============================================================
 
-CSDIFF-WEB (baseline: diff3):
-  True Positives:  92
-  False Positives: 0
-  True Negatives:  2
-  False Negatives: 88
+CSDIFF-WEB (baseline: slow-diff3):
+  True Positives:  91
+  False Positives: 1
+  True Negatives:  58
+  False Negatives: 32
 
-  Precision: 1.000
-  Recall:    0.511
-  F1-Score:  0.676
-  Accuracy:  0.516
+  Precision: 0.989
+  Recall:    0.740
+  F1-Score:  0.847
+  Accuracy:  0.819
 
 ============================================================
 COMPARAÇÃO DE CONFLITOS
@@ -48,28 +48,28 @@ SLOW-DIFF3:
   Com conflito:         125 (67.9%)
   Sem conflito:         59
 
-REDUÇÃO (CSDiff-Web vs diff3):
-  Absoluta: 90 conflitos
-  Relativa: 49.5%
+REDUÇÃO (CSDiff-Web vs slow-diff3):
+  Absoluta: 33 conflitos
+  Relativa: 26.4%
 
 ============================================================
 TEMPO DE EXECUÇÃO
 ============================================================
 
 CSDIFF-WEB:
-  Média:   0.1312s
-  Mediana: 0.0937s
-  Min/Max: 0.0439s / 4.0817s
+  Média:   0.1336s
+  Mediana: 0.1005s
+  Min/Max: 0.0465s / 1.4018s
 
 DIFF3:
-  Média:   0.1726s
-  Mediana: 0.1700s
-  Min/Max: 0.1553s / 0.2994s
+  Média:   0.1977s
+  Mediana: 0.1732s
+  Min/Max: 0.1561s / 0.3664s
 
 SLOW-DIFF3:
-  Média:   0.1131s
-  Mediana: 0.0928s
-  Min/Max: 0.0813s / 1.1227s
+  Média:   0.1444s
+  Mediana: 0.0984s
+  Min/Max: 0.0833s / 2.1202s
 
 ============================================================
 
@@ -78,11 +78,11 @@ Gerando relatórios...
 ============================================================
 RELATÓRIOS GERADOS
 ============================================================
-Markdown: data\reports\analysis_20251215_062455.md
-LaTeX:    data\reports\table_20251215_062455.tex
+Markdown: data\reports\analysis_20251215_074252.md
+LaTeX:    data\reports\table_20251215_074252.tex
 ============================================================
 
 ✅ Análise concluída!
 
 Para ver o relatório:
-  cat data\reports\analysis_20251215_062455.md
+  cat data\reports\analysis_20251215_074252.md

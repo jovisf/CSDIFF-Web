@@ -64,7 +64,7 @@ class ReportGenerator:
             # Seção 1: False Positives / False Negatives
             if summary['fp_fn_analysis']:
                 f.write("## 1. Análise de False Positives / False Negatives\n\n")
-                f.write("Baseline: **diff3** (ground truth)\n\n")
+                f.write("Baseline: **slow-diff3** (ground truth)\n\n")
 
                 for tool, metrics in summary['fp_fn_analysis'].items():
                     f.write(f"### {tool.upper()}\n\n")
@@ -107,17 +107,17 @@ class ReportGenerator:
                 if 'reduction' in summary['conflict_comparison']:
                     red = summary['conflict_comparison']['reduction']
 
-                    f.write("### Redução de Conflitos (CSDiff-Web vs diff3)\n\n")
+                    f.write("### Redução de Conflitos (CSDiff-Web vs slow-diff3)\n\n")
                     f.write(f"- **Redução absoluta:** {red['absolute']} conflitos\n")
                     f.write(f"- **Redução relativa:** {red['relative']:.1f}%\n\n")
 
                     # Interpretação
                     if red['relative'] > 0:
-                        f.write(f"✅ **CSDiff-Web reduziu {red['relative']:.1f}% dos conflitos** em relação ao diff3.\n\n")
+                        f.write(f"✅ **CSDiff-Web reduziu {red['relative']:.1f}% dos conflitos** em relação ao slow-diff3.\n\n")
                     elif red['relative'] < 0:
-                        f.write(f"⚠️ CSDiff-Web gerou {abs(red['relative']):.1f}% mais conflitos que diff3.\n\n")
+                        f.write(f"⚠️ CSDiff-Web gerou {abs(red['relative']):.1f}% mais conflitos que slow-diff3.\n\n")
                     else:
-                        f.write(f"➡️ CSDiff-Web teve desempenho equivalente ao diff3.\n\n")
+                        f.write(f"➡️ CSDiff-Web teve desempenho equivalente ao slow-diff3.\n\n")
 
             # Seção 3: Distribuição de Conflitos
             if summary['conflict_distribution']:
@@ -147,13 +147,13 @@ class ReportGenerator:
                 f.write("\n")
 
                 # Comparação de performance
-                if 'csdiff-web' in summary['execution_time'] and 'diff3' in summary['execution_time']:
+                if 'csdiff-web' in summary['execution_time'] and 'slow-diff3' in summary['execution_time']:
                     csdiff_time = summary['execution_time']['csdiff-web']['mean']
-                    diff3_time = summary['execution_time']['diff3']['mean']
-                    overhead = ((csdiff_time - diff3_time) / diff3_time * 100) if diff3_time > 0 else 0
+                    slow_time = summary['execution_time']['slow-diff3']['mean']
+                    overhead = ((csdiff_time - slow_time) / slow_time * 100) if slow_time > 0 else 0
 
                     f.write("### Overhead de Performance\n\n")
-                    f.write(f"- **diff3 médio:** {diff3_time:.4f}s\n")
+                    f.write(f"- **slow-diff3 médio:** {slow_time:.4f}s\n")
                     f.write(f"- **CSDiff-Web médio:** {csdiff_time:.4f}s\n")
                     f.write(f"- **Overhead:** {overhead:+.1f}%\n\n")
 
@@ -167,11 +167,11 @@ class ReportGenerator:
             if 'reduction' in summary.get('conflict_comparison', {}):
                 red_pct = summary['conflict_comparison']['reduction']['relative']
                 if red_pct > 10:
-                    conclusions.append(f"1. **CSDiff-Web demonstrou redução significativa de {red_pct:.1f}% nos conflitos** em relação ao diff3, validando a eficácia da abordagem baseada em separadores sintáticos.")
+                    conclusions.append(f"1. **CSDiff-Web demonstrou redução significativa de {red_pct:.1f}% nos conflitos** em relação ao slow-diff3, validando a eficácia da abordagem baseada em separadores sintáticos.")
                 elif red_pct > 0:
                     conclusions.append(f"1. CSDiff-Web apresentou redução moderada de {red_pct:.1f}% nos conflitos.")
                 else:
-                    conclusions.append(f"1. CSDiff-Web teve desempenho similar ao diff3 em termos de conflitos ({red_pct:.1f}% de variação).")
+                    conclusions.append(f"1. CSDiff-Web teve desempenho similar ao slow-diff3 em termos de conflitos ({red_pct:.1f}% de variação).")
 
             # Conclusão 2: Precisão
             if summary.get('fp_fn_analysis', {}).get('csdiff-web'):
@@ -184,8 +184,8 @@ class ReportGenerator:
                     conclusions.append(f"2. Precisão baixa ({precision:.3f}) indica necessidade de ajustes no algoritmo.")
 
             # Conclusão 3: Performance
-            if 'csdiff-web' in summary.get('execution_time', {}) and 'diff3' in summary.get('execution_time', {}):
-                overhead = ((summary['execution_time']['csdiff-web']['mean'] - summary['execution_time']['diff3']['mean']) / summary['execution_time']['diff3']['mean'] * 100)
+            if 'csdiff-web' in summary.get('execution_time', {}) and 'slow-diff3' in summary.get('execution_time', {}):
+                overhead = ((summary['execution_time']['csdiff-web']['mean'] - summary['execution_time']['slow-diff3']['mean']) / summary['execution_time']['slow-diff3']['mean'] * 100)
                 if overhead < 50:
                     conclusions.append(f"3. **Overhead de performance aceitável** ({overhead:+.1f}%), tornando CSDiff-Web viável para uso prático.")
                 else:
@@ -222,7 +222,7 @@ class ReportGenerator:
 
         with open(table_path, 'w', encoding='utf-8') as f:
             # Tabela comparativa de conflitos
-            f.write("% Tabela comparativa - CSDiff-Web vs diff3\n")
+            f.write("% Tabela comparativa - CSDiff-Web vs slow-diff3\n")
             f.write("\\begin{table}[htbp]\n")
             f.write("\\centering\n")
             f.write("\\caption{Comparação de Conflitos entre Ferramentas}\n")

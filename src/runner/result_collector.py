@@ -100,7 +100,7 @@ class ResultCollector:
                 'csdiff_success': bool,
                 'csdiff_conflicts': int,
                 'csdiff_time': float,
-                'diff3_success': bool,
+                'slow_diff3_success': bool,
                 ...
             }
         """
@@ -289,15 +289,15 @@ class ResultCollector:
             f.write("COMPARACAO\n")
             f.write("=" * 60 + "\n")
 
-            if 'csdiff-web' in metrics and 'diff3' in metrics:
+            if 'csdiff-web' in metrics and 'slow-diff3' in metrics:
                 csdiff_conflicts = metrics['csdiff-web']['total_conflicts']
-                diff3_conflicts = metrics['diff3']['total_conflicts']
+                slow_conflicts = metrics['slow-diff3']['total_conflicts']
 
-                reduction = diff3_conflicts - csdiff_conflicts
-                reduction_pct = (reduction / diff3_conflicts * 100) if diff3_conflicts > 0 else 0
+                reduction = slow_conflicts - csdiff_conflicts
+                reduction_pct = (reduction / slow_conflicts * 100) if slow_conflicts > 0 else 0
 
-                f.write(f"Reducao de conflitos (CSDiff-Web vs diff3):\n")
-                f.write(f"  diff3:      {diff3_conflicts} conflitos\n")
+                f.write(f"Reducao de conflitos (CSDiff-Web vs slow-diff3):\n")
+                f.write(f"  slow-diff3: {slow_conflicts} conflitos\n")
                 f.write(f"  CSDiff-Web: {csdiff_conflicts} conflitos\n")
                 f.write(f"  Reducao:    {reduction} ({reduction_pct:.1f}%)\n\n")
 
