@@ -54,7 +54,7 @@ class ReportGenerator:
 
         with open(report_path, 'w', encoding='utf-8') as f:
             # Cabeçalho
-            f.write("# Análise Comparativa - CSDiff-Web vs diff3 vs Mergiraf\n\n")
+            f.write("# Análise Comparativa - CSDiff-Web vs diff3 vs slow-diff3\n\n")
             f.write(f"**Data:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
             f.write(f"**Dataset:** {summary['dataset_info']['total_triplets']} triplas  \n")
             f.write(f"**Ferramentas:** {', '.join(summary['dataset_info']['tools_compared'])}  \n\n")

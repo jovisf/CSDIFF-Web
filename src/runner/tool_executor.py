@@ -1,6 +1,6 @@
 """
 Executor de ferramentas de merge.
-Executa CSDiff-Web, diff3 e Mergiraf em triplas.
+Executa CSDiff-Web, diff3 e slow-diff3 em triplas.
 
 Este módulo é responsável por:
 1. Executar cada ferramenta em uma tripla
@@ -28,9 +28,9 @@ class ToolExecutor:
     Executor de ferramentas de merge.
 
     Suporta:
-    - CSDiff-Web (Python nativo)
-    - diff3 (subprocess)
-    - Mergiraf (subprocess, se disponível)
+    - CSDiff-Web
+    - diff3
+    - slow-diff3
     """
 
     def __init__(self, timeout: int = 60):
@@ -44,10 +44,10 @@ class ToolExecutor:
         self.stats = {
             'csdiff_executions': 0,
             'diff3_executions': 0,
-            'mergiraf_executions': 0,
+            'slow_diff3_executions': 0,
             'csdiff_errors': 0,
             'diff3_errors': 0,
-            'mergiraf_errors': 0,
+            'slow_diff3_errors': 0,
         }
 
     def execute_csdiff_web(
@@ -213,44 +213,34 @@ class ToolExecutor:
                 'error': str(e)
             }
 
-    def execute_mergiraf(
+    def execute_slow_diff3(
         self,
         base_file: Path,
         left_file: Path,
-        right_file: Path
+        right_file: Path,
+        script_path: str = "../slow-diff3/src/index.js"
     ) -> Dict:
         """
-        Executa Mergiraf em uma tripla.
-
-        NOTA: Mergiraf requer arquivos no disco (não strings).
-
-        Args:
-            base_file: Path para arquivo base
-            left_file: Path para arquivo left
-            right_file: Path para arquivo right
-
-        Returns:
-            Dict com resultados (mesmo formato)
+        Executa slow_diff3 em uma tripla.
         """
-        self.stats['mergiraf_executions'] += 1
+        self.stats['slow_diff3_executions'] += 1
 
         start_time = time.time()
 
         try:
-            # Verificar se Mergiraf está instalado
-            check = subprocess.run(
-                ["mergiraf", "--version"],
-                capture_output=True,
-                timeout=5
-            )
+            # Comando: node index.js <left> <base> <right> -m
+            # Nota: O README do slow-diff3 especifica a ordem: left base right
+            cmd = [
+                "node", 
+                script_path, 
+                str(left_file), 
+                str(base_file), 
+                str(right_file), 
+                "-m"
+            ]
 
-            if check.returncode != 0:
-                raise FileNotFoundError("Mergiraf não encontrado no PATH")
-
-            # Executar Mergiraf
-            # Formato: mergiraf <base> <left> <right>
             proc = subprocess.run(
-                ["mergiraf", str(base_file), str(left_file), str(right_file)],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
@@ -259,15 +249,19 @@ class ToolExecutor:
 
             execution_time = time.time() - start_time
 
-            # Mergiraf retorna resultado em stdout
+            # slow-diff3 retorna resultado em stdout
             result = proc.stdout
 
-            # Detectar conflitos (Mergiraf usa marcadores similares)
-            has_conflict = "<<<<<<<" in result or "CONFLICT" in result
+            # Se houver erro no stderr (e não for apenas aviso), considerar falha
+            if proc.returncode != 0:
+                raise RuntimeError(f"Slow-diff3 falhou: {proc.stderr}")
+
+            # Detectar conflitos
+            has_conflict = "<<<<<<<" in result
             num_conflicts = result.count("<<<<<<<")
 
             return {
-                'tool': 'mergiraf',
+                'tool': 'slow-diff3',
                 'success': True,
                 'has_conflict': has_conflict,
                 'num_conflicts': num_conflicts,
@@ -276,30 +270,14 @@ class ToolExecutor:
                 'error': None
             }
 
-        except FileNotFoundError as e:
-            self.stats['mergiraf_errors'] += 1
-            execution_time = time.time() - start_time
-
-            logger.warning("Mergiraf não disponível - pulando")
-
-            return {
-                'tool': 'mergiraf',
-                'success': False,
-                'has_conflict': None,
-                'num_conflicts': None,
-                'result': None,
-                'execution_time': execution_time,
-                'error': 'Mergiraf não instalado'
-            }
-
         except subprocess.TimeoutExpired:
-            self.stats['mergiraf_errors'] += 1
+            self.stats['slow_diff3_errors'] += 1
             execution_time = time.time() - start_time
 
-            logger.error(f"Mergiraf excedeu timeout de {self.timeout}s")
+            logger.error(f"Slow-diff3 excedeu timeout de {self.timeout}s")
 
             return {
-                'tool': 'mergiraf',
+                'tool': 'slow-diff3',
                 'success': False,
                 'has_conflict': None,
                 'num_conflicts': None,
@@ -309,13 +287,13 @@ class ToolExecutor:
             }
 
         except Exception as e:
-            self.stats['mergiraf_errors'] += 1
+            self.stats['slow_diff3_errors'] += 1
             execution_time = time.time() - start_time
 
-            logger.error(f"Erro ao executar Mergiraf: {e}")
+            logger.error(f"Erro ao executar slow-diff3: {e}")
 
             return {
-                'tool': 'mergiraf',
+                'tool': 'slow-diff3',
                 'success': False,
                 'has_conflict': None,
                 'num_conflicts': None,
@@ -342,14 +320,14 @@ class ToolExecutor:
             base, left, right: Conteúdos
             extension: Extensão do arquivo
             filename: Nome do arquivo
-            base_file, left_file, right_file: Paths (para Mergiraf)
+            base_file, left_file, right_file: Paths (para slow-diff3)
 
         Returns:
             Dict mapeando ferramenta → resultado:
             {
                 'csdiff-web': {...},
                 'diff3': {...},
-                'mergiraf': {...}
+                'slow-diff3': {...}
             }
         """
         results = {}
@@ -364,16 +342,16 @@ class ToolExecutor:
         logger.info("Executando diff3...")
         results['diff3'] = self.execute_diff3(base, left, right)
 
-        # Executar Mergiraf (se arquivos fornecidos)
+        # Executar slow-diff3
         if base_file and left_file and right_file:
-            logger.info("Executando Mergiraf...")
-            results['mergiraf'] = self.execute_mergiraf(
+            logger.info("Executando slow-diff3...")
+            # Certifique-se de passar o caminho correto do script JS se não for o padrão definido
+            results['slow-diff3'] = self.execute_slow_diff3(
                 base_file, left_file, right_file
             )
         else:
-            logger.info("Mergiraf pulado (arquivos não fornecidos)")
-            results['mergiraf'] = {
-                'tool': 'mergiraf',
+            results['slow-diff3'] = {
+                'tool': 'slow-diff3',
                 'success': False,
                 'error': 'Arquivos não fornecidos'
             }
@@ -395,7 +373,7 @@ class ToolExecutor:
         print(f"\ndiff3:")
         print(f"  Execuções: {self.stats['diff3_executions']}")
         print(f"  Erros:     {self.stats['diff3_errors']}")
-        print(f"\nMergiraf:")
-        print(f"  Execuções: {self.stats['mergiraf_executions']}")
-        print(f"  Erros:     {self.stats['mergiraf_errors']}")
+        print(f"\nslow-diff3:")
+        print(f"  Execuções: {self.stats['slow_diff3_executions']}")
+        print(f"  Erros:     {self.stats['slow_diff3_errors']}")
         print("=" * 60 + "\n")

@@ -53,8 +53,11 @@ class MetricsAnalyzer:
             required_cols = [
                 'csdiff_web_has_conflict',
                 'diff3_has_conflict',
+                'slow_diff3_has_conflict',
                 'csdiff_web_num_conflicts',
-                'diff3_num_conflicts'
+                'diff3_num_conflicts',
+                'slow_diff3_num_conflicts',
+                
             ]
 
             missing = [col for col in required_cols if col not in self.df.columns]
@@ -139,7 +142,7 @@ class MetricsAnalyzer:
         results = {}
 
         # Para cada ferramenta
-        for tool in ['csdiff_web', 'diff3', 'mergiraf']:
+        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
             conflict_col = f'{tool}_has_conflict'
 
             if conflict_col not in self.df.columns:
@@ -183,7 +186,7 @@ class MetricsAnalyzer:
         """
         results = {}
 
-        for tool in ['csdiff_web', 'diff3', 'mergiraf']:
+        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
             num_col = f'{tool}_num_conflicts'
 
             if num_col not in self.df.columns:
@@ -218,7 +221,7 @@ class MetricsAnalyzer:
         """
         results = {}
 
-        for tool in ['csdiff_web', 'diff3', 'mergiraf']:
+        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
             time_col = f'{tool}_time'
 
             if time_col not in self.df.columns:

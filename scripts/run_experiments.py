@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script principal para executar experimentos.
-Executa CSDiff-Web + diff3 + Mergiraf em triplas mineradas.
+Executa CSDiff-Web + diff3 + slow-diff3 em triplas mineradas.
 
 Uso:
     python3 scripts/run_experiments.py
@@ -32,7 +32,7 @@ def setup_logging(verbose: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Executa experimentos com CSDiff-Web, diff3 e Mergiraf'
+        description='Executa experimentos com CSDiff-Web, diff3 e slow-diff3'
     )
     parser.add_argument(
         '--triplets-dir',
@@ -55,8 +55,8 @@ def main():
     parser.add_argument(
         '--tools',
         nargs='+',
-        choices=['csdiff-web', 'diff3', 'mergiraf'],
-        default=['csdiff-web', 'diff3', 'mergiraf'],
+        choices=['csdiff-web', 'diff3', 'slow-diff3'],
+        default=['csdiff-web', 'diff3', 'slow-diff3'],
         help='Ferramentas a executar (padrão: todas)'
     )
     parser.add_argument(

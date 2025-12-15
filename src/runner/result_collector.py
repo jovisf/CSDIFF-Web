@@ -58,7 +58,7 @@ class ResultCollector:
                 {
                     'csdiff-web': {...},
                     'diff3': {...},
-                    'mergiraf': {...}
+                    'slow-diff3': {...}
                 }
         """
         self.stats['total_triplets'] += 1
@@ -177,7 +177,7 @@ class ResultCollector:
         metrics = {}
 
         # Para cada ferramenta
-        for tool in ['csdiff_web', 'diff3', 'mergiraf']:
+        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
             tool_metrics = self._calculate_tool_metrics(tool)
             metrics[tool.replace('_', '-')] = tool_metrics
 

@@ -42,7 +42,7 @@ function foo() { return 2; }
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│     Runner      │  → Orquestra experimentos (CSDiff-Web vs diff3 vs Mergiraf)
+│     Runner      │  → Orquestra experimentos (CSDiff-Web vs diff3 vs slow-diff3)
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -83,6 +83,10 @@ pip3 install -r requirements.txt
 
 # Verifique instalação do diff3
 diff3 --version
+
+# Instale dependências do slow-diff3
+cd slow-diff3
+npm install
 ```
 
 ## Uso Rápido
@@ -178,14 +182,14 @@ Suporta:
 
 ## Comparação com Ferramentas Existentes
 
-| Ferramenta | Abordagem | Granularidade | Conflitos Espúrios |
+| Ferramenta | Abordagem | Implementação | Granularidade | Conflitos Espúrios |
 |------------|-----------|---------------|-------------------|
-| **diff3** | Textual linha a linha | Linha | Alto |
-| **Mergiraf** | Estruturado (AST) | Nó da AST | Baixo |
-| **CSDiff-Web** | Textual + separadores | Separador sintático | Médio |
+| **diff3** | Textual linha a linha | Nativa (C / Binário) | Linha | Alto |
+| **slow-diff3** | Textual linha a linha | Interpretada (Node.js) | Linha | Alto |
+| **CSDiff-Web** | Textual + separadores | Interpretada (Python) | Separador sintático | Médio |
 
 **Vantagens do CSDiff-Web:**
-- ✅ Mais preciso que diff3 puro
+- ✅ Mais preciso que diff3 puro ou slow-diff3
 - ✅ Mais simples que abordagens estruturadas (sem parsing de AST)
 - ✅ Funciona com código sintaticamente incorreto
 - ✅ Preserva formatação e comentários
@@ -212,7 +216,7 @@ Ver documentação completa: [docs/MINER.md](docs/MINER.md)
 
 ## Runner de Experimentos
 
-O Runner executa experimentos comparativos entre CSDiff-Web, diff3 e Mergiraf.
+O Runner executa experimentos comparativos entre CSDiff-Web, diff3 e slow-diff3.
 
 **Uso rápido:**
 ```bash
@@ -276,7 +280,7 @@ python3 examples/simple_analysis.py     # Analisa resultados
 
 - [x] **Core:** CSDiff-Web funcional com testes ✅
 - [x] **Minerador:** Extração de triplas de merge commits ✅
-- [x] **Runner:** Orquestrador de experimentos (CSDiff-Web vs diff3 vs Mergiraf) ✅
+- [x] **Runner:** Orquestrador de experimentos (CSDiff-Web vs diff3 vs slow-diff3) ✅
 - [x] **Analisador:** Coleta de métricas (conflitos, FP, FN) ✅
 - [ ] **Docker:** Container para reprodutibilidade
 - [ ] **Experimentos em escala:** Executar em 200+ triplas e gerar relatórios
@@ -290,7 +294,7 @@ python3 examples/simple_analysis.py     # Analisa resultados
 | **M1: Core Funcional** | Merge básico funciona | ✅ **Completo** |
 | **M2: Testes** | Cobertura de testes > 80% | ✅ **Completo** |
 | **M3: Minerador** | ≥100 triplas de ≥5 repos | ✅ **Completo** |
-| **M4: Runner** | Comparação com diff3 + Mergiraf | ✅ **Completo** |
+| **M4: Runner** | Comparação com diff3 + slow-diff3 | ✅ **Completo** |
 | **M5: Analyzer** | Análise estatística (FP/FN, métricas) | ✅ **Completo** |
 
 ## Referências

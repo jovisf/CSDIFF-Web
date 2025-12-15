@@ -1,6 +1,6 @@
 """
 Orquestrador de experimentos.
-Executa CSDiff-Web + diff3 + Mergiraf em triplas mineradas.
+Executa CSDiff-Web + diff3 + slow-diff3 em triplas mineradas.
 
 Este é o módulo principal do Runner. Ele:
 1. Carrega triplas do diretório data/triplets/
@@ -206,7 +206,7 @@ class ExperimentRunner:
         Args:
             max_triplets: Máximo de triplas a processar (None = todas)
             tools: Lista de ferramentas a executar (padrão: todas)
-                   ['csdiff-web', 'diff3', 'mergiraf']
+                   ['csdiff-web', 'diff3', 'slow-diff3']
 
         Returns:
             Dict com resultados:
@@ -218,7 +218,7 @@ class ExperimentRunner:
             }
         """
         if tools is None:
-            tools = ['csdiff-web', 'diff3', 'mergiraf']
+            tools = ['csdiff-web', 'diff3', 'slow-diff3']
 
         # Carregar triplas
         logger.info("Carregando triplas...")
