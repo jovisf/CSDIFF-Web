@@ -72,9 +72,9 @@ SLOW-DIFF3     : 2.3770s
 ============================================================
 PROCESSO CONCLUÍDO
 ============================================================
-📄 Relatório Markdown: data\reports\analysis_20251217_203001.md
-📄 Tabela LaTeX:      data\reports\table_individual_performance_20251217_203001.tex
+📄 Relatório Markdown: data\reports\analysis_20251217_204628.md
+📄 Tabela LaTeX:      data\reports\table_individual_performance_20251217_204628.tex
 ============================================================
 
 Para visualizar o relatório formatado:
-  cat data\reports\analysis_20251217_203001.md
+  cat data\reports\analysis_20251217_204628.md

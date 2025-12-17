@@ -114,9 +114,34 @@ class ReportGenerator:
             f.write("---\n\n")
 
             # ---------------------------------------------------------
-            # SEÇÃO 3: TEMPO DE EXECUÇÃO
+            # SEÇÃO 3: ANÁLISE DE CONFLITOS 
             # ---------------------------------------------------------
-            f.write("## 3. Tempo de Execução\n\n")
+            f.write("## 3. Análise de Conflitos\n\n")
+            f.write("Esta seção analisa a quantidade de conflitos gerados por cada ferramenta.\n\n")
+
+            if 'conflict_metrics' in summary:
+                f.write("### Métricas Gerais\n\n")
+                f.write("| Ferramenta | Total Conflitos | Média por Arquivo | Máx. Conflitos |\n")
+                f.write("|------------|-----------------|-------------------|----------------|\n")
+                
+                for tool, metrics in summary['conflict_metrics'].items():
+                    f.write(f"| {tool.upper()} | {metrics['total_conflicts']} | {metrics['avg_conflicts']:.2f} | {metrics['max_conflicts']} |\n")
+                f.write("\n")
+
+            if 'conflict_distribution' in summary:
+                f.write("### Distribuição de Conflitos (Quantidade de Arquivos)\n\n")
+                f.write("| Ferramenta | 0 Conflitos (Limpo) | 1 Conflito | 2 Conflitos | 3+ Conflitos |\n")
+                f.write("|------------|---------------------|------------|-------------|--------------|\n")
+
+                for tool, dist in summary['conflict_distribution'].items():
+                    f.write(f"| {tool.upper()} | {dist['0']} | {dist['1']} | {dist['2']} | {dist['3+']} |\n")
+            
+            f.write("\n---\n\n")
+
+            # ---------------------------------------------------------
+            # SEÇÃO 4: TEMPO DE EXECUÇÃO
+            # ---------------------------------------------------------
+            f.write("## 4. Tempo de Execução\n\n")
             f.write("| Ferramenta | Média (s) | Min (s) | Max (s) |\n")
             f.write("|------------|-----------|---------|---------|\n")
 

@@ -72,6 +72,48 @@ class MetricsAnalyzer:
             logger.error(f"Erro ao carregar CSV: {e}")
             raise
 
+    def analyze_conflict_metrics(self) -> Dict[str, Dict]:
+        """
+        Analisa métricas relacionadas à quantidade de conflitos.
+        """
+        results = {}
+        for tool in self.tools:
+            conflict_num_col = f'{tool}_num_conflicts'
+            if conflict_num_col in self.df.columns:
+                # Filtrar apenas linhas onde a ferramenta foi executada com sucesso
+                # (ou onde num_conflicts é válido)
+                conflicts = self.df[conflict_num_col].dropna()
+                
+                if len(conflicts) > 0:
+                    tool_name = tool.replace('_', '-')
+                    results[tool_name] = {
+                        'total_conflicts': int(conflicts.sum()),
+                        'avg_conflicts': float(conflicts.mean()),
+                        'max_conflicts': int(conflicts.max()),
+                        'conflicts_per_file': float(conflicts.mean()) # Média por arquivo
+                    }
+        return results
+
+    def analyze_conflict_distribution(self) -> Dict[str, Dict]:
+        """
+        Analisa a distribuição da quantidade de conflitos (0, 1, 2, 3+).
+        """
+        results = {}
+        for tool in self.tools:
+            conflict_num_col = f'{tool}_num_conflicts'
+            if conflict_num_col in self.df.columns:
+                counts = self.df[conflict_num_col].value_counts().sort_index()
+                
+                dist = {
+                    '0': int(counts.get(0, 0)),
+                    '1': int(counts.get(1, 0)),
+                    '2': int(counts.get(2, 0)),
+                    '3+': int(counts[counts.index >= 3].sum())
+                }
+                tool_name = tool.replace('_', '-')
+                results[tool_name] = dist
+        return results
+
     def analyze_individual_performance(self) -> Dict[str, Dict]:
         """
         Calcula a performance individual de cada ferramenta em relação ao gabarito.
@@ -186,7 +228,9 @@ class MetricsAnalyzer:
             },
             'individual_performance': self.analyze_individual_performance(),
             'pairwise_comparisons': self.compare_all_pairs(),
-            'execution_time': self.analyze_execution_time()
+            'execution_time': self.analyze_execution_time(),
+            'conflict_metrics': self.analyze_conflict_metrics(), # NOVO
+            'conflict_distribution': self.analyze_conflict_distribution() # NOVO
         }
 
     def print_summary(self):
