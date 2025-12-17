@@ -61,10 +61,51 @@ class ReportGenerator:
 
             f.write("---\n\n")
 
-            # Seção 1: False Positives / False Negatives
+            # Seção 1: Comparações Par a Par 
+            if summary.get('pairwise_comparisons'):
+                f.write("## 1. Comparações Par a Par (Gabarito: Merge Commit Real)\n\n")
+                f.write("**Metodologia:** Cada ferramenta é comparada contra outra usando o merge commit real do repositório como gabarito.\n\n")
+
+                for pair_key, metrics in summary['pairwise_comparisons'].items():
+                    if 'error' in metrics:
+                        f.write(f"### {metrics['pair']}\n\n")
+                        f.write(f"❌ **Erro:** {metrics['error']}\n\n")
+                        continue
+
+                    f.write(f"### {metrics['pair'].upper()}\n\n")
+
+                    # Tabela de métricas
+                    f.write("| Métrica | Valor |\n")
+                    f.write("|---------|-------|\n")
+                    f.write(f"| Total de comparações | {metrics['total']} |\n")
+                    f.write(f"| **FP Adicionais** de {metrics['f1_name']} | {metrics['f1_fp_adicional']} |\n")
+                    f.write(f"| **FN Adicionais** de {metrics['f1_name']} | {metrics['f1_fn_adicional']} |\n")
+                    f.write(f"| {metrics['f1_name']} **Correto** | {metrics['f1_correto']} |\n")
+                    f.write(f"| Indefinidos | {metrics['indefinido']} |\n\n")
+
+                    # Taxas percentuais
+                    if metrics['total'] > 0:
+                        fp_rate = metrics['f1_fp_adicional'] / metrics['total'] * 100
+                        fn_rate = metrics['f1_fn_adicional'] / metrics['total'] * 100
+                        correct_rate = metrics['f1_correto'] / metrics['total'] * 100
+
+                        f.write("**Taxas:**\n\n")
+                        f.write(f"- FP Adicional: {fp_rate:.1f}%\n")
+                        f.write(f"- FN Adicional: {fn_rate:.1f}%\n")
+                        f.write(f"- Correto: {correct_rate:.1f}%\n\n")
+
+                f.write("**Interpretação:**\n\n")
+                f.write("- **FP Adicional:** F1 reportou conflito desnecessariamente (F2 integrou corretamente)\n")
+                f.write("- **FN Adicional:** F1 falhou silenciosamente (F1 ≠ repo, enquanto F2 reportou conflito)\n")
+                f.write("- **Correto:** F1 integrou sem conflito e o resultado bate com o repositório\n\n")
+
+                f.write("---\n\n")
+
+            # Seção 2: False Positives / False Negatives (LEGADO)
             if summary['fp_fn_analysis']:
-                f.write("## 1. Análise de False Positives / False Negatives\n\n")
-                f.write("Baseline: **slow-diff3** (ground truth)\n\n")
+                f.write("## 2. Análise de False Positives / False Negatives (LEGADO)\n\n")
+                f.write("**⚠️ ATENÇÃO:** Método antigo usando slow-diff3 como baseline (tautologia).  \n")
+                f.write("Baseline: **slow-diff3** (ground truth - problema: cria tautologia)\n\n")
 
                 for tool, metrics in summary['fp_fn_analysis'].items():
                     f.write(f"### {tool.upper()}\n\n")

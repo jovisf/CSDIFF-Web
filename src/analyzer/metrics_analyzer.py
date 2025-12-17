@@ -1,23 +1,29 @@
 """
 Analisador de métricas estatísticas.
-Calcula False Positives, False Negatives e análise comparativa.
+Calcula análise comparativa usando merge commit como gabarito.
 
 Este módulo implementa análise estatística avançada para validação
 científica do CSDiff-Web conforme metodologia do TCC.
 
-DEFINIÇÕES:
-- True Positive (TP): Ferramenta detectou conflito E há conflito real
-- False Positive (FP): Ferramenta detectou conflito MAS não há conflito real
-- True Negative (TN): Ferramenta não detectou conflito E não há conflito real
-- False Negative (FN): Ferramenta não detectou conflito MAS há conflito real
+METODOLOGIA CORRIGIDA:
+- Gabarito: Merge commit real do repositório (merged.ts)
+- Comparação: Pares ordenados de ferramentas (F1, F2)
+- Classificação: Falsos Positivos Adicionais e Falsos Negativos Adicionais
 
-BASELINE: slow-diff3 é considerado ground truth (referência)
+DEFINIÇÕES:
+- Falso Positivo Adicional (F1 sobre F2): F1 reportou conflito, mas F2
+  integrou corretamente (F2 = resultado do repo)
+- Falso Negativo Adicional (F1 sobre F2): F1 não reportou conflito, mas
+  produziu resultado incorreto (F1 ≠ repo), enquanto F2 reportou conflito
+- Correto: Sem conflito E resultado = repo
 """
 
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Tuple
 import logging
+
+from .comparison_classifier import ComparisonClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +73,116 @@ class MetricsAnalyzer:
         except Exception as e:
             logger.error(f"Erro ao carregar CSV: {e}")
             raise
+
+    def compare_tools_pairwise(
+        self,
+        f1_name: str,
+        f2_name: str
+    ) -> Dict:
+        """
+        Compara duas ferramentas usando comparação par a par com merge commit como gabarito.
+
+        Args:
+            f1_name: Nome da ferramenta 1 (ex: 'csdiff_web', 'diff3', 'slow_diff3')
+            f2_name: Nome da ferramenta 2 (ex: 'csdiff_web', 'diff3', 'slow_diff3')
+
+        Returns:
+            Dict com métricas:
+            {
+                'pair': str,
+                'f1_fp_adicional': int,  # F1 tem FP adicional sobre F2
+                'f1_fn_adicional': int,  # F1 tem FN adicional sobre F2
+                'f1_correto': int,       # F1 acertou
+                'indefinido': int,       # Casos indefinidos
+                'total': int
+            }
+        """
+        classifier = ComparisonClassifier()
+
+        # Colunas necessárias
+        f1_conflict_col = f'{f1_name}_has_conflict'
+        f2_conflict_col = f'{f2_name}_has_conflict'
+        f1_output_col = f'{f1_name}_output'
+        f2_output_col = f'{f2_name}_output'
+        repo_col = 'repo_merged_content'
+
+        # Verificar se colunas existem
+        required = [f1_conflict_col, f2_conflict_col, f1_output_col, f2_output_col, repo_col]
+        missing = [col for col in required if col not in self.df.columns]
+        if missing:
+            logger.error(f"Colunas faltando para comparação: {missing}")
+            return {
+                'pair': f"{f1_name} vs {f2_name}",
+                'error': f"Colunas faltando: {missing}"
+            }
+
+        # Filtrar linhas válidas
+        valid_mask = (
+            self.df[f1_conflict_col].notna() &
+            self.df[f2_conflict_col].notna() &
+            self.df[f1_output_col].notna() &
+            self.df[f2_output_col].notna() &
+            self.df[repo_col].notna()
+        )
+
+        # Classificar cada linha
+        for idx in self.df[valid_mask].index:
+            row = self.df.loc[idx]
+
+            f1_data = {
+                'output': str(row[f1_output_col]),
+                'has_conflict': bool(row[f1_conflict_col])
+            }
+            f2_data = {
+                'output': str(row[f2_output_col]),
+                'has_conflict': bool(row[f2_conflict_col])
+            }
+            repo_expected = str(row[repo_col])
+
+            classifier.classify_pair(f1_name, f2_name, f1_data, f2_data, repo_expected)
+
+        # Retornar estatísticas
+        stats = classifier.get_statistics()
+        return {
+            'pair': f"{f1_name} vs {f2_name}",
+            'f1_name': f1_name,
+            'f2_name': f2_name,
+            'f1_fp_adicional': stats['fp_adicional'],
+            'f1_fn_adicional': stats['fn_adicional'],
+            'f1_correto': stats['corretos'],
+            'indefinido': stats['indefinidos'],
+            'total': stats['total_comparisons']
+        }
+
+    def compare_all_pairs(self, tools: List[str] = None) -> Dict[str, Dict]:
+        """
+        Compara todos os pares ordenados de ferramentas.
+
+        Args:
+            tools: Lista de ferramentas a comparar (padrão: ['csdiff_web', 'diff3', 'slow_diff3'])
+
+        Returns:
+            Dict com resultados de todas as comparações:
+            {
+                'csdiff_web_vs_diff3': {...},
+                'csdiff_web_vs_slow_diff3': {...},
+                ...
+            }
+        """
+        if tools is None:
+            tools = ['csdiff_web', 'diff3', 'slow_diff3']
+
+        results = {}
+
+        # Gerar todos os pares ordenados (F1, F2) onde F1 != F2
+        for f1 in tools:
+            for f2 in tools:
+                if f1 != f2:
+                    pair_key = f"{f1}_vs_{f2}"
+                    logger.info(f"Comparando par: {pair_key}")
+                    results[pair_key] = self.compare_tools_pairwise(f1, f2)
+
+        return results
 
     def calculate_fp_fn(
         self,
@@ -252,9 +368,17 @@ class MetricsAnalyzer:
         Returns:
             Dict consolidado com todas as análises
         """
-        # Calcular FP/FN para CSDiff-Web
+        # NOVA METODOLOGIA: Comparações par a par usando merge commit como gabarito
+        pairwise_comparisons = {}
+        if 'repo_merged_content' in self.df.columns:
+            logger.info("Executando comparações par a par com gabarito do repo...")
+            pairwise_comparisons = self.compare_all_pairs()
+        else:
+            logger.warning("Coluna 'repo_merged_content' não encontrada - pulando comparações par a par")
+
+        # Calcular FP/FN para CSDiff-Web (LEGADO - manter para compatibilidade)
         fp_fn_metrics = {}
-        if 'csdiff_web_has_conflict' in self.df.columns:
+        if 'csdiff_web_has_conflict' in self.df.columns and 'slow_diff3_has_conflict' in self.df.columns:
             fp_fn_metrics['csdiff-web'] = self.calculate_fp_fn('csdiff_web_has_conflict', baseline_col='slow_diff3_has_conflict')
 
         # Outras métricas
@@ -263,7 +387,8 @@ class MetricsAnalyzer:
         execution_time = self.analyze_execution_time()
 
         return {
-            'fp_fn_analysis': fp_fn_metrics,
+            'pairwise_comparisons': pairwise_comparisons,  # NOVA METODOLOGIA
+            'fp_fn_analysis': fp_fn_metrics,  # LEGADO
             'conflict_comparison': conflict_comparison,
             'conflict_distribution': conflict_distribution,
             'execution_time': execution_time,
@@ -283,10 +408,37 @@ class MetricsAnalyzer:
         print(f"Total de triplas: {summary['dataset_info']['total_triplets']}")
         print()
 
-        # FP/FN
-        if summary['fp_fn_analysis']:
+        # NOVA METODOLOGIA: Comparações par a par
+        if summary['pairwise_comparisons']:
             print("=" * 60)
-            print("FALSE POSITIVES / FALSE NEGATIVES")
+            print("COMPARAÇÕES PAR A PAR (Gabarito: Merge Commit Real)")
+            print("=" * 60)
+
+            for pair_key, metrics in summary['pairwise_comparisons'].items():
+                if 'error' in metrics:
+                    print(f"\n{metrics['pair']}: {metrics['error']}")
+                    continue
+
+                print(f"\n{metrics['pair'].upper()}:")
+                print(f"  Total de comparações:        {metrics['total']}")
+                print(f"  FP Adicionais de {metrics['f1_name']}: {metrics['f1_fp_adicional']}")
+                print(f"  FN Adicionais de {metrics['f1_name']}: {metrics['f1_fn_adicional']}")
+                print(f"  {metrics['f1_name']} Correto:         {metrics['f1_correto']}")
+                print(f"  Indefinidos:                 {metrics['indefinido']}")
+
+                # Calcular taxas
+                if metrics['total'] > 0:
+                    fp_rate = metrics['f1_fp_adicional'] / metrics['total'] * 100
+                    fn_rate = metrics['f1_fn_adicional'] / metrics['total'] * 100
+                    correct_rate = metrics['f1_correto'] / metrics['total'] * 100
+                    print(f"\n  Taxa FP Adicional: {fp_rate:.1f}%")
+                    print(f"  Taxa FN Adicional: {fn_rate:.1f}%")
+                    print(f"  Taxa Correto:      {correct_rate:.1f}%")
+
+        # FP/FN (LEGADO - manter para comparação)
+        if summary['fp_fn_analysis']:
+            print("\n" + "=" * 60)
+            print("FALSE POSITIVES / FALSE NEGATIVES (LEGADO - baseline: slow-diff3)")
             print("=" * 60)
 
             for tool, metrics in summary['fp_fn_analysis'].items():

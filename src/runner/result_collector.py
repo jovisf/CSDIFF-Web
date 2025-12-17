@@ -46,7 +46,8 @@ class ResultCollector:
         self,
         triplet_id: str,
         triplet_metadata: Dict,
-        tool_results: Dict[str, Dict]
+        tool_results: Dict[str, Dict],
+        merged_content: str = None
     ):
         """
         Adiciona resultado de uma tripla.
@@ -60,6 +61,7 @@ class ResultCollector:
                     'diff3': {...},
                     'slow-diff3': {...}
                 }
+            merged_content: Conteúdo do merge real (GABARITO)
         """
         self.stats['total_triplets'] += 1
 
@@ -80,6 +82,7 @@ class ResultCollector:
             'filepath': triplet_metadata.get('filepath', ''),
             'extension': triplet_metadata.get('extension', ''),
             'commit_sha': triplet_metadata.get('commit_sha', '')[:8],
+            'repo_merged_content': merged_content if merged_content else '',  # GABARITO
             **self._flatten_tool_results(tool_results)
         }
 
@@ -97,9 +100,10 @@ class ResultCollector:
         Returns:
             Dict com campos planificados:
             {
-                'csdiff_success': bool,
-                'csdiff_conflicts': int,
-                'csdiff_time': float,
+                'csdiff_web_success': bool,
+                'csdiff_web_conflicts': int,
+                'csdiff_web_output': str,  # Resultado do merge (para comparar com gabarito)
+                'csdiff_web_time': float,
                 'slow_diff3_success': bool,
                 ...
             }
@@ -113,6 +117,7 @@ class ResultCollector:
             flattened[f'{prefix}_success'] = result.get('success', False)
             flattened[f'{prefix}_has_conflict'] = result.get('has_conflict', None)
             flattened[f'{prefix}_num_conflicts'] = result.get('num_conflicts', None)
+            flattened[f'{prefix}_output'] = result.get('result', '')  # Resultado do merge (para comparar com gabarito)
             flattened[f'{prefix}_time'] = result.get('execution_time', None)
             flattened[f'{prefix}_error'] = result.get('error', None)
 
