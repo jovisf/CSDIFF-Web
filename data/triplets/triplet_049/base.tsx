@@ -1,92 +1,34 @@
-import * as React from 'react';
-import { addPropertyControls, ControlType } from 'framer';
-// tslint:disable-next-line: ban-ts-ignore
-// @ts-ignore
-import { MuiThemeProvider, createMuiTheme } from '@material-ui/core/styles';
-import { parseColor } from './utils/parseColor';
+'use client';
+<<<<<<< HEAD
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';;
 
-interface Props {
-  paletteType?: 'dark' | 'light';
-  primary?: string;
-  secondary?: string;
-  error?: string;
-  info?: string;
-  warning?: string;
-  success?: string;
-}
+=======
 
-const defaultProps: Props = {
-  paletteType: 'light',
-  primary: '#3f51b5',
-  secondary: '#f50057',
-  error: '#f44336',
-  info: '#2196f3',
-  warning: '#ff9800',
-  success: '#4caf4f',
-};
-
-export const Theme: React.SFC<Props> = (props: Props) => {
-  const {
-    children,
-    error,
-    paletteType,
-    primary,
-    secondary,
-    info,
-    warning,
-    success,
-    ...other
-  } = props;
-
-  const theme = createMuiTheme({
-    palette: {
-      type: paletteType,
-      primary: { main: parseColor(primary) },
-      secondary: { main: parseColor(secondary) },
-      error: { main: parseColor(error) },
-      info: { main: parseColor(info) },
-      warning: { main: parseColor(warning) },
-      success: { main: parseColor(success) },
-    },
-  });
-
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight, } from 'lucide-react';
+>>>>>>> origin/main
+export default function ZionAiDocumentAnalyzerPage() {
   return (
-    <MuiThemeProvider theme={theme} {...other}>
-      {children}
-    </MuiThemeProvider>
+    <>
+      <Head>
+        <title>Zion Ai Document Analyzer - Zion Tech Group</title>
+        <meta name="description" content="Professional services by Zion Tech Group." />
+      </Head>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <h1>Zion Ai Document Analyzer - Zion Tech Group</h1>
+          <p>Professional zion ai document analyzer - zion tech group services coming soon.</p>
+          <Link href="/contact"
+            className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center mx-auto w-fit"
+          >
+            Contact Us
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Link>
+        </div>
+      </div>
+    </>
   );
-};
-
-Theme.defaultProps = defaultProps;
-
-addPropertyControls(Theme, {
-  paletteType: {
-    type: ControlType.Enum,
-    title: 'Palette type',
-    options: ['dark', 'light'],
-  },
-  primary: {
-    type: ControlType.Color,
-    title: 'Primary',
-  },
-  secondary: {
-    type: ControlType.Color,
-    title: 'Secondary',
-  },
-  error: {
-    type: ControlType.Color,
-    title: 'Error',
-  },
-  info: {
-    type: ControlType.Color,
-    title: 'Info',
-  },
-  warning: {
-    type: ControlType.Color,
-    title: 'Warning',
-  },
-  success: {
-    type: ControlType.Color,
-    title: 'Success',
-  },
-});
+}

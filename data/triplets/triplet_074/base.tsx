@@ -1,210 +1,171 @@
-import React from 'react';
-import {
-  createMuiTheme,
-  createStyles,
-  ThemeProvider,
-  withStyles,
-  WithStyles,
-} from '@material-ui/core/styles';
-import CssBaseline from '@material-ui/core/CssBaseline';
-import Hidden from '@material-ui/core/Hidden';
-import Typography from '@material-ui/core/Typography';
-import Link from '@material-ui/core/Link';
-import Navigator from './Navigator';
-import Content from './Content';
-import Header from './Header';
+'use client';
+import {Facebook, Twitter, Linkedin, Github, Phone, Mail, MapPin} from 'lucide-react';
+import Link from 'next/link';
+const Footer: React.FC = () => {
 
-function Copyright() {
-  return (
-    <Typography variant="body2" color="textSecondary" align="center">
-      {'Copyright © '}
-      <Link color="inherit" href="https://material-ui.com/">
-        Your Website
-      </Link>{' '}
-      {new Date().getFullYear()}
-      {'.'}
-    </Typography>
-  );
-}
+  const currentYear = new Date().getFullYear();
+  
+  const aiServices = [
+    { name: 'AI Analytics & BI', url: '/ai-analytics' },
+    { name: 'AI Automation', url: '/ai-automation' },
+    { name: 'AI Chatbots & NLP', url: '/ai-chatbot-builder' },
+    { name: 'AI Content Generation', url: '/ai-content-generation' },
+    { name: 'AI Cybersecurity', url: '/ai-cybersecurity' },
+    { name: 'Computer Vision', url: '/ai-computer-vision' },
+    { name: 'Predictive Analytics', url: '/ai-predictive-analytics' },
+    { name: 'Speech & Voice AI', url: '/ai-voice-assistant' }
+  ];
 
-let theme = createMuiTheme({
-  palette: {
-    primary: {
-      light: '#63ccff',
-      main: '#009be5',
-      dark: '#006db3',
-    },
-  },
-  typography: {
-    h5: {
-      fontWeight: 500,
-      fontSize: 26,
-      letterSpacing: 0.5,
-    },
-  },
-  shape: {
-    borderRadius: 8,
-  },
-  props: {
-    MuiTab: {
-      disableRipple: true,
-    },
-  },
-  mixins: {
-    toolbar: {
-      minHeight: 48,
-    },
-  },
-});
+  const itServices = [
+    { name: 'Web Development', url: '/web-development' },
+    { name: 'Mobile Development', url: '/mobile-development' },
+    { name: 'Cloud Migration', url: '/cloud-migration' },
+    { name: 'Cybersecurity', url: '/cybersecurity' },
+    { name: 'DevOps', url: '/devops' },
+    { name: 'Data Analytics', url: '/data-analytics' },
+    { name: 'IoT Solutions', url: '/iot-solutions' },
+    { name: 'Blockchain', url: '/blockchain' }
+  ];
 
-theme = {
-  ...theme,
-  overrides: {
-    MuiDrawer: {
-      paper: {
-        backgroundColor: '#18202c',
-      },
-    },
-    MuiButton: {
-      label: {
-        textTransform: 'none',
-      },
-      contained: {
-        boxShadow: 'none',
-        '&:active': {
-          boxShadow: 'none',
-        },
-      },
-    },
-    MuiTabs: {
-      root: {
-        marginLeft: theme.spacing(1),
-      },
-      indicator: {
-        height: 3,
-        borderTopLeftRadius: 3,
-        borderTopRightRadius: 3,
-        backgroundColor: theme.palette.common.white,
-      },
-    },
-    MuiTab: {
-      root: {
-        textTransform: 'none',
-        margin: '0 16px',
-        minWidth: 0,
-        padding: 0,
-        [theme.breakpoints.up('md')]: {
-          padding: 0,
-          minWidth: 0,
-        },
-      },
-    },
-    MuiIconButton: {
-      root: {
-        padding: theme.spacing(1),
-      },
-    },
-    MuiTooltip: {
-      tooltip: {
-        borderRadius: 4,
-      },
-    },
-    MuiDivider: {
-      root: {
-        backgroundColor: '#404854',
-      },
-    },
-    MuiListItemText: {
-      primary: {
-        fontWeight: theme.typography.fontWeightMedium,
-      },
-    },
-    MuiListItemIcon: {
-      root: {
-        color: 'inherit',
-        marginRight: 0,
-        '& svg': {
-          fontSize: 20,
-        },
-      },
-    },
-    MuiAvatar: {
-      root: {
-        width: 32,
-        height: 32,
-      },
-    },
-  },
-};
+  const company = [
+    { name: 'About Us', url: '/about' },
+    { name: 'Our Team', url: '/team' },
+    { name: 'Careers', url: '/careers' },
+    { name: 'Contact', url: '/contact' },
+    { name: 'Blog', url: '/blog' },
+    { name: 'Privacy Policy', url: '/privacy' },
+    { name: 'Terms of Service', url: '/terms' }
+  ];
 
-const drawerWidth = 256;
-
-const styles = createStyles({
-  root: {
-    display: 'flex',
-    minHeight: '100vh',
-  },
-  drawer: {
-    [theme.breakpoints.up('sm')]: {
-      width: drawerWidth,
-      flexShrink: 0,
-    },
-  },
-  app: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  main: {
-    flex: 1,
-    padding: theme.spacing(6, 4),
-    background: '#eaeff1',
-  },
-  footer: {
-    padding: theme.spacing(2),
-    background: '#eaeff1',
-  },
-});
-
-export interface PaperbaseProps extends WithStyles<typeof styles> {}
-
-function Paperbase(props: PaperbaseProps) {
-  const { classes } = props;
-  const [mobileOpen, setMobileOpen] = React.useState(false);
-
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
+  const support = [
+    { name: 'Help Center', url: '/help' },
+    { name: 'Documentation', url: '/docs' },
+    { name: 'API Reference', url: '/api' },
+    { name: 'Status', url: '/status' },
+    { name: 'Community', url: '/community' }
+  ];
 
   return (
-    <ThemeProvider theme={theme}>
-      <div className={classes.root}>
-        <CssBaseline />
-        <nav className={classes.drawer}>
-          <Hidden smUp implementation="js">
-            <Navigator
-              PaperProps={{ style: { width: drawerWidth } }}
-              variant="temporary"
-              open={mobileOpen}
-              onClose={handleDrawerToggle}
-            />
-          </Hidden>
-          <Hidden xsDown implementation="css">
-            <Navigator PaperProps={{ style: { width: drawerWidth } }} />
-          </Hidden>
-        </nav>
-        <div className={classes.app}>
-          <Header onDrawerToggle={handleDrawerToggle} />
-          <main className={classes.main}>
-            <Content />
-          </main>
-          <footer className={classes.footer}>
-            <Copyright />
-          </footer>
+    <footer className="bg-gray-900 text-white">
+      <div className="container mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-8">
+          {/* Company Info */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-cyan-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-lg">Z</span>
+              </div>
+              <span className="text-white font-bold text-xl">Zion Tech Group</span>
+            </div>
+            <p className="text-gray-300">
+              Leading provider of AI and IT solutions, empowering businesses with cutting-edge technology and innovative digital transformation services.
+            </p>
+            <div className="flex space-x-4">
+              <a href="#" className="text-gray-400 hover:text-white transition-colors">
+                <Facebook className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-gray-400 hover:text-white transition-colors">
+                <Twitter className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-gray-400 hover:text-white transition-colors">
+                <Linkedin className="h-5 w-5" />
+              </a>
+              <a href="#" className="text-gray-400 hover:text-white transition-colors">
+                <Github className="h-5 w-5" />
+              </a>
+            </div>
+          </div>
+          
+          {/* AI Services */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">AI Services</h3>
+            <ul className="space-y-2">
+              {aiServices.map((service) => (
+                <li key={service.name}>
+                  <Link href={service.url} className="text-gray-300 hover:text-white transition-colors">
+                    {service.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* IT Services */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">IT Services</h3>
+            <ul className="space-y-2">
+              {itServices.map((service) => (
+                <li key={service.name}>
+                  <Link href={service.url} className="text-gray-300 hover:text-white transition-colors">
+                    {service.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Company & Resources */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Company</h3>
+            <ul className="space-y-2">
+              {company.map((item) => (
+                <li key={item.name}>
+                  <Link 
+                    href={item.url}
+                    className="text-gray-300 hover:text-white transition-colors text-sm"
+                  >
+                    {item.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Support */}
+          <div>
+            <h3 className="text-white font-semibold mb-4">Support</h3>
+            <ul className="space-y-2">
+              {support.map((item) => (
+                <li key={item.name}>
+                  <Link 
+                    href={item.url}
+                    className="text-gray-300 hover:text-white transition-colors text-sm"
+                  >
+                    {item.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Contact Info */}
+        <div className="border-t border-gray-800 mt-8 pt-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-300">
+            <div className="flex items-center space-x-2">
+              <Phone className="h-4 w-4" />
+              <span>+1 (555) 123-4567</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Mail className="h-4 w-4" />
+              <span>info@ziontechgroup.com</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-4 w-4" />
+              <span>San Francisco, CA</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Copyright */}
+        <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-400">
+          <p>&copy; {currentYear} Zion Tech Group. All rights reserved.</p>
         </div>
       </div>
-    </ThemeProvider>
+    </footer>
   );
-}
+};
 
-export default withStyles(styles)(Paperbase);
+Footer.displayName = 'Footer';
+
+export default Footer;

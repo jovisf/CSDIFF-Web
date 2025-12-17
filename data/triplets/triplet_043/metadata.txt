@@ -1,12 +1,13 @@
 Triplet ID: 43
-Original File: packages/eslint-config-react-app/index.js
-Extension: .js
-Commit SHA: 0a7b0951c1b96bfd3ca1da7af69cf39bc483c642
-Base SHA: fddce8a9e21bf68f37054586deb0c8636a45f50b
-Left SHA: 6d3dbedd9171d73d70bc0e8c3ffe2e921a494dc0
-Right SHA: bbd5a6015561c6ff8a18d99b4f852c9b10e55198
+Original File: app/zion-email-automation/page.tsx
+Extension: .tsx
+Commit SHA: 7235ed903034e448a72e680ce8c44a00258ecaf2
+Base SHA: db3d98011a4b56b76e86f406db5313caa4190c38
+Left SHA: 328736f7ee57db8b2fb2d6e41fdd5af98055947b
+Right SHA: c86723cb1efe11c7e3bd960146a7f05bf711916f
 
 File Sizes:
-  Base: 9507 bytes
-  Left: 9505 bytes
-  Right: 9505 bytes
+  Base:   1262 bytes
+  Left:   200 bytes
+  Right:  200 bytes
+  Merged: 200 bytes (GABARITO)

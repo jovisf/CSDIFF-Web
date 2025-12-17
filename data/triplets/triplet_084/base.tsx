@@ -1,175 +1,224 @@
-import React from 'react';
-import { makeStyles, useTheme, Theme, createStyles } from '@material-ui/core/styles';
-import Table from '@material-ui/core/Table';
-import TableBody from '@material-ui/core/TableBody';
-import TableCell from '@material-ui/core/TableCell';
-import TableContainer from '@material-ui/core/TableContainer';
-import TableFooter from '@material-ui/core/TableFooter';
-import TablePagination from '@material-ui/core/TablePagination';
-import TableRow from '@material-ui/core/TableRow';
-import Paper from '@material-ui/core/Paper';
-import IconButton from '@material-ui/core/IconButton';
-import FirstPageIcon from '@material-ui/icons/FirstPage';
-import KeyboardArrowLeft from '@material-ui/icons/KeyboardArrowLeft';
-import KeyboardArrowRight from '@material-ui/icons/KeyboardArrowRight';
-import LastPageIcon from '@material-ui/icons/LastPage';
-
-const useStyles1 = makeStyles((theme: Theme) =>
-  createStyles({
-    root: {
-      flexShrink: 0,
-      marginLeft: theme.spacing(2.5),
+'use client';
+import { Zap, Brain, Globe, Users, BarChart, MessageCircle, FileText, TrendingUp, Clock, Star, ArrowRight, CheckCircle, Cpu, Settings, Shield } from 'lucide-react';
+import Link from 'next/link';
+<<<<<<< HEAD
+import { ArrowRight, CheckCircle, Cpu, Check, Zap, Brain, Settings, Globe, Users, BarChart, MessageCircle, FileText, TrendingUp, Clock, Shield, Star } from 'lucide-react';;
+=======
+>>>>>>> origin/main
+const AIAutomationPage: React.FC = () => {
+  const features = [
+    {
+      icon: Zap,
+      title: 'Workflow Automation',
+      description: 'Automate complex business processes with intelligent workflow management.'
     },
-  }),
-);
-
-interface TablePaginationActionsProps {
-  count: number;
-  page: number;
-  rowsPerPage: number;
-  onChangePage: (event: React.MouseEvent<HTMLButtonElement>, newPage: number) => void;
-}
-
-function TablePaginationActions(props: TablePaginationActionsProps) {
-  const classes = useStyles1();
-  const theme = useTheme();
-  const { count, page, rowsPerPage, onChangePage } = props;
-
-  const handleFirstPageButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    onChangePage(event, 0);
-  };
-
-  const handleBackButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    onChangePage(event, page - 1);
-  };
-
-  const handleNextButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    onChangePage(event, page + 1);
-  };
-
-  const handleLastPageButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    onChangePage(event, Math.max(0, Math.ceil(count / rowsPerPage) - 1));
-  };
-
+    {
+      icon: Brain,
+      title: 'Intelligent Decision Making',
+      description: 'AI-powered decision making based on data analysis and business rules.'
+    },
+    {
+      icon: Settings,
+      title: 'Custom Integrations',
+      description: 'Seamlessly integrate with your existing systems and third-party applications.'
+    },
+    {
+      icon: Globe,
+      title: 'Scalable Solutions',
+      description: 'Automation solutions that grow with your business and adapt to changing needs.'
+    }
+  ];
+  const useCases = [
+    {
+      title: 'Customer Service',
+      description: 'Automate ticket routing, response generation, and issue resolution.',
+      icon: Users
+    },
+    {
+      title: 'Data Processing',
+      description: 'Automate data collection, validation, and analysis workflows.',
+      icon: BarChart
+    },
+    {
+      title: 'Marketing Automation',
+      description: 'Automate email campaigns, lead scoring, and customer segmentation.',
+      icon: MessageCircle
+    },
+    {
+      title: 'Financial Operations',
+      description: 'Automate invoice processing, expense management, and financial reporting.',
+      icon: FileText
+    }
+  ]
+  const benefits = [
+  'Reduce operational costs by up to 70%',
+    'Increase productivity and efficiency',
+    'Eliminate human errors in repetitive tasks',
+    '24/7 automated operations',
+    'Scalable and adaptable solutions',
+    'ROI within 3-6 months'
+  ]
+  const stats = [
+    { number: '70%', label: 'Cost Reduction', icon: TrendingUp },
+    { number: '24/7', label: 'Automated Operations', icon: Clock },
+    { number: '99.9%', label: 'Accuracy Rate', icon: Shield },
+    { number: '3-6', label: 'Months ROI', icon: Star }
+  ]
   return (
-    <div className={classes.root}>
-      <IconButton
-        onClick={handleFirstPageButtonClick}
-        disabled={page === 0}
-        aria-label="first page"
-      >
-        {theme.direction === 'rtl' ? <LastPageIcon /> : <FirstPageIcon />}
-      </IconButton>
-      <IconButton onClick={handleBackButtonClick} disabled={page === 0} aria-label="previous page">
-        {theme.direction === 'rtl' ? <KeyboardArrowRight /> : <KeyboardArrowLeft />}
-      </IconButton>
-      <IconButton
-        onClick={handleNextButtonClick}
-        disabled={page >= Math.ceil(count / rowsPerPage) - 1}
-        aria-label="next page"
-      >
-        {theme.direction === 'rtl' ? <KeyboardArrowLeft /> : <KeyboardArrowRight />}
-      </IconButton>
-      <IconButton
-        onClick={handleLastPageButtonClick}
-        disabled={page >= Math.ceil(count / rowsPerPage) - 1}
-        aria-label="last page"
-      >
-        {theme.direction === 'rtl' ? <FirstPageIcon /> : <LastPageIcon />}
-      </IconButton>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+      {/* Hero Section */}
+      <section className="relative py-20 px-4 sm: px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-5xl md: text-6xl font-bold text-white mb-6">
+            AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Automation</span> Services
+          </h1>
+          <p className="text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
+            Transform your business operations with intelligent automation solutions that reduce costs, increase efficiency, and eliminate repetitive tasks.
+          </p>
+          <div className="flex flex-col sm: flex-row gap-4 justify-center">
+            <Link
+              href="/contact"
+              className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold rounded-lg hover:from-cyan-600 hover:to-purple-600 transition-all duration-300"
+            >
+              Get Started Today
+              <ArrowRight className="w-8 h-8" />
+            </Link>
+            <Link
+              href="/ai-services"
+              className="inline-flex items-center px-8 py-3 border-2 border-cyan-400 text-cyan-400 font-semibold rounded-lg hover:bg-cyan-400 hover:text-white transition-all duration-300"
+            >
+              View All AI Services
+            </Link>
+          </div>
+        </div>
+      </section>
+      {/* Stats Section */}
+      <section className="py-16 px-4 sm: px-6 lg:px-8 bg-black/20">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-2 md: grid-cols-4 gap-8">
+            {stats.map((stat, index) => (
+              <div key={index} className="text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full mb-4">
+                  <stat.icon className="w-8 h-8 text-white" />
+                </div>
+                <div className="text-3xl font-bold text-white mb-2">{stat.number}</div>
+                <div className="text-gray-300">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      {/* Features Section */}
+      <section className="py-20 px-4 sm: px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md: text-4xl font-bold text-white mb-6">
+              Powerful Automation Features
+            </h2>
+            <p className="text-lg text-gray-300 max-w-3xl mx-auto">
+              Our AI automation solutions come with advanced features designed to streamline your business processes.
+            </p>
+          </div>
+          <div className="grid md: grid-cols-2 lg:grid-cols-4 gap-8">
+            {features.map((feature, index) => (
+              <div key={index} className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover: border-cyan-400/50 transition-all duration-300 group">
+                <div className="mb-6">
+                  <feature.icon className="w-12 h-12 text-cyan-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">{feature.title}</h3>
+                <p className="text-gray-300">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      {/* Use Cases Section */}
+      <section className="py-20 px-4 sm: px-6 lg:px-8 bg-black/20">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md: text-4xl font-bold text-white mb-6">
+              Real-World Use Cases
+            </h2>
+            <p className="text-lg text-gray-300 max-w-3xl mx-auto">
+              See how our AI automation solutions are transforming businesses across different industries.
+            </p>
+          </div>
+          <div className="grid md: grid-cols-2 lg:grid-cols-4 gap-8">
+            {useCases.map((useCase, index) => (
+              <div key={index} className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 hover: border-purple-400/50 transition-all duration-300 group">
+                <div className="mb-6">
+                  <useCase.icon className="w-12 h-12 text-purple-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">{useCase.title}</h3>
+                <p className="text-gray-300">{useCase.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      {/* Benefits Section */}
+      <section className="py-20 px-4 sm: px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid lg: grid-cols-2 gap-12 items-center">
+            <div>
+              <h2 className="text-3xl md: text-4xl font-bold text-white mb-6">
+                Why Choose Our AI Automation?
+              </h2>
+              <p className="text-lg text-gray-300 mb-8">
+                Our AI automation solutions are designed to deliver measurable results and transform your business operations.
+              </p>
+              <ul className="space-y-4">
+                {benefits.map((benefit, index) => (
+                  <li key={index} className="flex items-start">
+                    <CheckCircle className="w-8 h-8" />
+                    <span className="text-gray-300">{benefit}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="relative">
+              <div className="bg-gradient-to-r from-cyan-500/20 to-purple-500/20 rounded-2xl p-8 backdrop-blur-sm border border-white/10">
+                <div className="text-center">
+                  <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full mb-6">
+                    <Cpu className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-4">Intelligent Automation</h3>
+                  <p className="text-gray-300">
+                    Our AI-powered automation learns from your business processes and continuously optimizes performance.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {/* CTA Section */}
+      <section className="py-20 px-4 sm: px-6 lg:px-8 bg-gradient-to-r from-cyan-600 to-purple-600">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-3xl md: text-4xl font-bold text-white mb-6">
+            Ready to Automate Your Business?
+          </h2>
+          <p className="text-xl text-cyan-100 mb-8">
+            Let our experts help you identify automation opportunities and implement solutions that drive real results.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link 
+              href="/contact" 
+              className="inline-flex items-center px-8 py-3 bg-white text-cyan-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors duration-300"
+            >
+              Start Your Automation Journey
+              <ArrowRight className="w-8 h-8" />
+            </Link>
+            <Link 
+              href="/ai-services" 
+              className="inline-flex items-center px-8 py-3 border-2 border-white text-white font-semibold rounded-lg hover:bg-white hover:text-cyan-600 transition-colors duration-300"
+            >
+              Explore All Services
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
-  );
+  )
 }
-
-function createData(name: string, calories: number, fat: number) {
-  return { name, calories, fat };
-}
-
-const rows = [
-  createData('Cupcake', 305, 3.7),
-  createData('Donut', 452, 25.0),
-  createData('Eclair', 262, 16.0),
-  createData('Frozen yoghurt', 159, 6.0),
-  createData('Gingerbread', 356, 16.0),
-  createData('Honeycomb', 408, 3.2),
-  createData('Ice cream sandwich', 237, 9.0),
-  createData('Jelly Bean', 375, 0.0),
-  createData('KitKat', 518, 26.0),
-  createData('Lollipop', 392, 0.2),
-  createData('Marshmallow', 318, 0),
-  createData('Nougat', 360, 19.0),
-  createData('Oreo', 437, 18.0),
-].sort((a, b) => (a.calories < b.calories ? -1 : 1));
-
-const useStyles2 = makeStyles({
-  table: {
-    minWidth: 500,
-  },
-});
-
-export default function CustomPaginationActionsTable() {
-  const classes = useStyles2();
-  const [page, setPage] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = React.useState(5);
-
-  const emptyRows = rowsPerPage - Math.min(rowsPerPage, rows.length - page * rowsPerPage);
-
-  const handleChangePage = (event: React.MouseEvent<HTMLButtonElement> | null, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (
-    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  return (
-    <TableContainer component={Paper}>
-      <Table className={classes.table} aria-label="custom pagination table">
-        <TableBody>
-          {(rowsPerPage > 0
-            ? rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-            : rows
-          ).map((row) => (
-            <TableRow key={row.name}>
-              <TableCell component="th" scope="row">
-                {row.name}
-              </TableCell>
-              <TableCell style={{ width: 160 }} align="right">
-                {row.calories}
-              </TableCell>
-              <TableCell style={{ width: 160 }} align="right">
-                {row.fat}
-              </TableCell>
-            </TableRow>
-          ))}
-          {emptyRows > 0 && (
-            <TableRow style={{ height: 53 * emptyRows }}>
-              <TableCell colSpan={6} />
-            </TableRow>
-          )}
-        </TableBody>
-        <TableFooter>
-          <TableRow>
-            <TablePagination
-              rowsPerPageOptions={[5, 10, 25, { label: 'All', value: -1 }]}
-              colSpan={3}
-              count={rows.length}
-              rowsPerPage={rowsPerPage}
-              page={page}
-              SelectProps={{
-                inputProps: { 'aria-label': 'rows per page' },
-                native: true,
-              }}
-              onChangePage={handleChangePage}
-              onChangeRowsPerPage={handleChangeRowsPerPage}
-              ActionsComponent={TablePaginationActions}
-            />
-          </TableRow>
-        </TableFooter>
-      </Table>
-    </TableContainer>
-  );
-}
+export default AIAutomationPage

@@ -1,63 +1,37 @@
-import React from 'react';
-import { makeStyles, createStyles, Theme } from '@material-ui/core/styles';
-import Switch from '@material-ui/core/Switch';
-import Paper from '@material-ui/core/Paper';
-import Collapse from '@material-ui/core/Collapse';
-import FormControlLabel from '@material-ui/core/FormControlLabel';
+'use client';
+<<<<<<< HEAD
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';;
+=======
 
-const useStyles = makeStyles((theme: Theme) =>
-  createStyles({
-    root: {
-      height: 180,
-    },
-    container: {
-      display: 'flex',
-    },
-    paper: {
-      margin: theme.spacing(1),
-    },
-    svg: {
-      width: 100,
-      height: 100,
-    },
-    polygon: {
-      fill: theme.palette.common.white,
-      stroke: theme.palette.divider,
-      strokeWidth: 1,
-    },
-  }),
-);
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight, } from 'lucide-react';
+>>>>>>> origin/main
+import Footer from '../components/Footer';
 
-export default function SimpleCollapse() {
-  const classes = useStyles();
-  const [checked, setChecked] = React.useState(false);
-
-  const handleChange = () => {
-    setChecked((prev) => !prev);
-  };
-
+export default function SpecializedservicesPage() {
+  
   return (
-    <div className={classes.root}>
-      <FormControlLabel
-        control={<Switch checked={checked} onChange={handleChange} />}
-        label="Show"
-      />
-      <div className={classes.container}>
-        <Collapse in={checked}>
-          <Paper elevation={4} className={classes.paper}>
-            <svg className={classes.svg}>
-              <polygon points="0,100 50,00, 100,100" className={classes.polygon} />
-            </svg>
-          </Paper>
-        </Collapse>
-        <Collapse in={checked} collapsedHeight={40}>
-          <Paper elevation={4} className={classes.paper}>
-            <svg className={classes.svg}>
-              <polygon points="0,100 50,00, 100,100" className={classes.polygon} />
-            </svg>
-          </Paper>
-        </Collapse>
-      </div>
-    </div>
+        <div>
+      <Head>
+        <title>Specialized Services - Zion Tech Group</title>
+        <meta name="description" content="Professional services by Zion Tech Group." />
+      </Head>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <h1>Specialized Services - Zion Tech Group</h1>
+          <p>Professional specialized services - zion tech group services coming soon.</p>
+          <Link href="/contact"
+            className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center mx-auto w-fit"
+          >
+            Contact Us
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Link>
+            </div>
+          </div>
+      <Footer />
+        </div>
   );
 }

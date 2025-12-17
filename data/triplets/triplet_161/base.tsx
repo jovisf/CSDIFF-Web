@@ -1,63 +1,38 @@
+'use client';
 import React from 'react';
-import Box from '@material-ui/core/Box';
 
-export default function AlignItems() {
-  return (
-    <div style={{ width: '100%' }}>
-      <Box
-        display="flex"
-        alignItems="flex-start"
-        p={1}
-        m={1}
-        bgcolor="background.paper"
-        css={{ height: 100 }}
-      >
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-      </Box>
-      <Box
-        display="flex"
-        alignItems="flex-end"
-        p={1}
-        m={1}
-        bgcolor="background.paper"
-        css={{ height: 100 }}
-      >
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-      </Box>
-      <Box
-        display="flex"
-        alignItems="center"
-        p={1}
-        m={1}
-        bgcolor="background.paper"
-        css={{ height: 100 }}
-      >
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-      </Box>
-    </div>
-  );
+interface SkipLinkProps {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
 }
+
+const EnhancedSkipLink: React.FC<SkipLinkProps> = ({
+  href,
+  children,
+  className = ''
+}) => {
+  return (
+    <a
+      href={href}
+      className={`
+        sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4
+        bg-cyan-600 text-white px-4 py-2 rounded-lg font-semibold
+        hover:bg-cyan-700 transition-colors duration-200 z-50
+        ${className}
+      `}
+      onClick={(e) => {
+        e.preventDefault();
+        const target = document.querySelector(href);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth' });
+          (target as HTMLElement).focus();
+        }
+      }}
+    >
+      {children}
+    </a>
+  );
+};
+
+export default EnhancedSkipLink;

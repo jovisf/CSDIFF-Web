@@ -1,683 +1,1398 @@
-import * as Vite from "vite";
-import { init as initEsModuleLexer } from "es-module-lexer";
-import * as Path from "pathe";
-import * as babel from "@babel/core";
-import colors from "picocolors";
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
 
-import { create } from "../virtual-module";
-import * as Typegen from "../../typegen";
-import { readFile } from "fs/promises";
-import path, { join } from "pathe";
-import invariant from "../../invariant";
-import {
-  type ConfigLoader,
-  type ResolvedReactRouterConfig,
-  createConfigLoader,
-  resolveRSCEntryFiles,
-} from "../../config/config";
-import { preloadVite } from "../vite";
-import { hasDependency } from "../has-dependency";
-import { getOptimizeDepsEntries } from "../optimize-deps-entries";
-import { createVirtualRouteConfig } from "./virtual-route-config";
-import {
-  transformVirtualRouteModules,
-  parseRouteExports,
-  isVirtualClientRouteModuleId,
-  CLIENT_NON_COMPONENT_EXPORTS,
-} from "./virtual-route-modules";
-import { loadDotenv } from "../load-dotenv";
-import { validatePluginOrder } from "../plugins/validate-plugin-order";
-import { warnOnClientSourceMaps } from "../plugins/warn-on-client-source-maps";
+import * as dom from '../../../base/browser/dom.js';
+import { StandardKeyboardEvent } from '../../../base/browser/keyboardEvent.js';
+import { ActionBar } from '../../../base/browser/ui/actionbar/actionbar.js';
+import { Button, IButtonStyles } from '../../../base/browser/ui/button/button.js';
+import { CountBadge, ICountBadgeStyles } from '../../../base/browser/ui/countBadge/countBadge.js';
+import { IHoverDelegate, IHoverDelegateOptions } from '../../../base/browser/ui/hover/hoverDelegate.js';
+import { IInputBoxStyles } from '../../../base/browser/ui/inputbox/inputBox.js';
+import { IKeybindingLabelStyles } from '../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
+import { IListStyles } from '../../../base/browser/ui/list/listWidget.js';
+import { IProgressBarStyles, ProgressBar } from '../../../base/browser/ui/progressbar/progressbar.js';
+import { IToggleStyles, Toggle, TriStateCheckbox } from '../../../base/browser/ui/toggle/toggle.js';
+import { equals } from '../../../base/common/arrays.js';
+import { TimeoutTimer } from '../../../base/common/async.js';
+import { Codicon } from '../../../base/common/codicons.js';
+import { Emitter, Event, EventBufferer } from '../../../base/common/event.js';
+import { KeyCode } from '../../../base/common/keyCodes.js';
+import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { isIOS } from '../../../base/common/platform.js';
+import Severity from '../../../base/common/severity.js';
+import { ThemeIcon } from '../../../base/common/themables.js';
+import './media/quickInput.css';
+import { localize } from '../../../nls.js';
+import { IInputBox, IKeyMods, IQuickInput, IQuickInputButton, IQuickInputHideEvent, IQuickInputToggle, IQuickNavigateConfiguration, IQuickPick, IQuickPickDidAcceptEvent, IQuickPickItem, IQuickPickItemButtonEvent, IQuickPickSeparator, IQuickPickSeparatorButtonEvent, IQuickPickWillAcceptEvent, IQuickWidget, ItemActivation, NO_KEY_MODS, QuickInputButtonLocation, QuickInputHideReason, QuickInputType, QuickPickFocus } from '../common/quickInput.js';
+import { QuickInputBox } from './quickInputBox.js';
+import { quickInputButtonToAction, renderQuickInputDescription } from './quickInputUtils.js';
+import { IConfigurationService } from '../../configuration/common/configuration.js';
+import { IHoverService, WorkbenchHoverDelegate } from '../../hover/browser/hover.js';
+import { QuickInputList } from './quickInputList.js';
+import type { IHoverOptions } from '../../../base/browser/ui/hover/hover.js';
+import { ContextKeyExpr, RawContextKey } from '../../contextkey/common/contextkey.js';
+import { QuickInputTreeController } from './tree/quickInputTreeController.js';
+import { observableValue } from '../../../base/common/observable.js';
 
-export function reactRouterRSCVitePlugin(): Vite.PluginOption[] {
-  let configLoader: ConfigLoader;
-  let typegenWatcherPromise: Promise<Typegen.Watcher> | undefined;
-  let viteCommand: Vite.ConfigEnv["command"];
-  let resolvedViteConfig: Vite.ResolvedConfig;
-  let routeIdByFile: Map<string, string> | undefined;
-  let logger: Vite.Logger;
-  let entries: { client: string; rsc: string; ssr: string };
+export const inQuickInputContextKeyValue = 'inQuickInput';
+export const InQuickInputContextKey = new RawContextKey<boolean>(inQuickInputContextKeyValue, false, localize('inQuickInput', "Whether keyboard focus is inside the quick input control"));
+export const inQuickInputContext = ContextKeyExpr.has(inQuickInputContextKeyValue);
 
-  let config: ResolvedReactRouterConfig;
-  let rootRouteFile: string;
-  function updateConfig(newConfig: ResolvedReactRouterConfig) {
-    config = newConfig;
-    rootRouteFile = Path.resolve(
-      newConfig.appDirectory,
-      newConfig.routes.root.file,
-    );
-  }
+export const quickInputAlignmentContextKeyValue = 'quickInputAlignment';
+export const QuickInputAlignmentContextKey = new RawContextKey<'top' | 'center' | undefined>(quickInputAlignmentContextKeyValue, 'top', localize('quickInputAlignment', "The alignment of the quick input"));
 
-  return [
-    {
-      name: "react-router/rsc",
-      async config(viteUserConfig, { command, mode }) {
-        await initEsModuleLexer;
-        await preloadVite();
+export const quickInputTypeContextKeyValue = 'quickInputType';
+export const QuickInputTypeContextKey = new RawContextKey<QuickInputType>(quickInputTypeContextKeyValue, undefined, localize('quickInputType', "The type of the currently visible quick input"));
 
-        viteCommand = command;
-        const rootDirectory = getRootDirectory(viteUserConfig);
-        const watch = command === "serve";
+export const endOfQuickInputBoxContextKeyValue = 'cursorAtEndOfQuickInputBox';
+export const EndOfQuickInputBoxContextKey = new RawContextKey<boolean>(endOfQuickInputBoxContextKeyValue, false, localize('cursorAtEndOfQuickInputBox', "Whether the cursor in the quick input is at the end of the input box"));
+export const endOfQuickInputBoxContext = ContextKeyExpr.has(endOfQuickInputBoxContextKeyValue);
 
-        await loadDotenv({
-          rootDirectory,
-          viteUserConfig,
-          mode,
-        });
-
-        configLoader = await createConfigLoader({
-          rootDirectory,
-          mode,
-          watch,
-          validateConfig: (userConfig) => {
-            let errors: string[] = [];
-            if (userConfig.buildEnd) errors.push("buildEnd");
-            if (userConfig.prerender) errors.push("prerender");
-            if (userConfig.presets?.length) errors.push("presets");
-            if (userConfig.routeDiscovery) errors.push("routeDiscovery");
-            if (userConfig.serverBundles) errors.push("serverBundles");
-            if (userConfig.ssr === false) errors.push("ssr: false");
-            if (userConfig.future?.v8_middleware === false)
-              errors.push("future.v8_middleware: false");
-            if (userConfig.future?.v8_splitRouteModules)
-              errors.push("future.v8_splitRouteModules");
-            if (userConfig.future?.v8_viteEnvironmentApi === false)
-              errors.push("future.v8_viteEnvironmentApi: false");
-            if (userConfig.future?.unstable_subResourceIntegrity)
-              errors.push("future.unstable_subResourceIntegrity");
-            if (errors.length) {
-              return `RSC Framework Mode does not currently support the following React Router config:\n${errors.map((x) => ` - ${x}`).join("\n")}\n`;
-            }
-          },
-        });
-
-        const configResult = await configLoader.getConfig();
-        if (!configResult.ok) throw new Error(configResult.error);
-        updateConfig(configResult.value);
-
-        if (
-          viteUserConfig.base &&
-          config.basename !== "/" &&
-          viteCommand === "serve" &&
-          !viteUserConfig.server?.middlewareMode &&
-          !config.basename.startsWith(viteUserConfig.base)
-        ) {
-          throw new Error(
-            "When using the React Router `basename` and the Vite `base` config, " +
-              "the `basename` config must begin with `base` for the default " +
-              "Vite dev server.",
-          );
-        }
-
-        const vite = await import("vite");
-        logger = vite.createLogger(viteUserConfig.logLevel, {
-          prefix: "[react-router]",
-        });
-
-        entries = await resolveRSCEntryFiles({
-          reactRouterConfig: config,
-        });
-
-        return {
-          resolve: {
-            dedupe: [
-              // https://react.dev/warnings/invalid-hook-call-warning#duplicate-react
-              "react",
-              "react/jsx-runtime",
-              "react/jsx-dev-runtime",
-              "react-dom",
-              "react-dom/client",
-              // Avoid router duplicates since mismatching routers cause `Error:
-              // You must render this element inside a <Remix> element`.
-              "react-router",
-              "react-router/dom",
-              "react-router/internal/react-server-client",
-              ...(hasDependency({ name: "react-router-dom", rootDirectory })
-                ? ["react-router-dom"]
-                : []),
-            ],
-          },
-          optimizeDeps: {
-            entries: getOptimizeDepsEntries({
-              entryClientFilePath: entries.client,
-              reactRouterConfig: config,
-            }),
-            esbuildOptions: {
-              jsx: "automatic",
-            },
-            include: [
-              // Pre-bundle React dependencies to avoid React duplicates,
-              // even if React dependencies are not direct dependencies.
-              // https://react.dev/warnings/invalid-hook-call-warning#duplicate-react
-              "react",
-              "react/jsx-runtime",
-              "react/jsx-dev-runtime",
-              "react-dom",
-              "react-server-dom-webpack",
-              "react-router > cookie",
-              "react-router > set-cookie-parser",
-              "react-router/internal/react-server-client",
-            ],
-          },
-          esbuild: {
-            jsx: "automatic",
-            jsxDev: viteCommand !== "build",
-          },
-          environments: {
-            client: {
-              build: {
-                rollupOptions: {
-                  input: {
-                    index: entries.client,
-                  },
-                  output: {
-                    manualChunks(id) {
-                      const normalized = Vite.normalizePath(id);
-                      if (
-                        normalized.includes("node_modules/react/") ||
-                        normalized.includes("node_modules/react-dom/") ||
-                        normalized.includes(
-                          "node_modules/react-server-dom-webpack/",
-                        ) ||
-                        normalized.includes("node_modules/@vitejs/plugin-rsc/")
-                      ) {
-                        return "react";
-                      }
-                      if (normalized.includes("node_modules/react-router/")) {
-                        return "router";
-                      }
-                    },
-                  },
-                },
-                outDir: join(config.buildDirectory, "client"),
-              },
-            },
-            rsc: {
-              build: {
-                rollupOptions: {
-                  input: {
-                    index: entries.rsc,
-                  },
-                  output: {
-                    entryFileNames: config.serverBuildFile,
-                    format: config.serverModuleFormat,
-                  },
-                },
-                outDir: join(config.buildDirectory, "server"),
-              },
-              resolve: {
-                noExternal: [
-                  "@react-router/dev/config/default-rsc-entries/entry.ssr",
-                ],
-              },
-            },
-            ssr: {
-              build: {
-                rollupOptions: {
-                  input: {
-                    index: entries.ssr,
-                  },
-                  output: {
-                    // Note: We don't set `entryFileNames` here because it's
-                    // considered private to the RSC environment build, and
-                    // @vitejs/plugin-rsc currently breaks if it's set to
-                    // something other than `index.js`.
-                    format: config.serverModuleFormat,
-                  },
-                },
-                outDir: join(config.buildDirectory, "server/__ssr_build"),
-              },
-              resolve: {
-                noExternal: [
-                  "@react-router/dev/config/default-rsc-entries/entry.rsc",
-                ],
-              },
-            },
-          },
-          build: {
-            rollupOptions: {
-              // Copied from https://github.com/vitejs/vite-plugin-react/blob/c602225271d4acf462ba00f8d6d8a2e42492c5cd/packages/common/warning.ts
-              onwarn(warning, defaultHandler) {
-                if (
-                  warning.code === "MODULE_LEVEL_DIRECTIVE" &&
-                  (warning.message.includes("use client") ||
-                    warning.message.includes("use server"))
-                ) {
-                  return;
-                }
-                // https://github.com/vitejs/vite/issues/15012
-                if (
-                  warning.code === "SOURCEMAP_ERROR" &&
-                  warning.message.includes("resolve original location") &&
-                  warning.pos === 0
-                ) {
-                  return;
-                }
-                if (viteUserConfig.build?.rollupOptions?.onwarn) {
-                  viteUserConfig.build.rollupOptions.onwarn(
-                    warning,
-                    defaultHandler,
-                  );
-                } else {
-                  defaultHandler(warning);
-                }
-              },
-            },
-          },
-        };
-      },
-      configResolved(viteConfig) {
-        resolvedViteConfig = viteConfig;
-      },
-      async configureServer(viteDevServer) {
-        configLoader.onChange(
-          async ({
-            result,
-            configCodeChanged,
-            routeConfigCodeChanged,
-            configChanged,
-            routeConfigChanged,
-          }) => {
-            if (!result.ok) {
-              invalidateVirtualModules(viteDevServer);
-              logger.error(result.error, {
-                clear: true,
-                timestamp: true,
-              });
-              return;
-            }
-
-            // prettier-ignore
-            let message =
-              configChanged ? "Config changed." :
-              routeConfigChanged ? "Route config changed." :
-              configCodeChanged ? "Config saved." :
-              routeConfigCodeChanged ? " Route config saved." :
-              "Config saved";
-
-            logger.info(colors.green(message), {
-              clear: true,
-              timestamp: true,
-            });
-
-            // Update shared plugin config reference
-            updateConfig(result.value);
-
-            if (configChanged || routeConfigChanged) {
-              invalidateVirtualModules(viteDevServer);
-            }
-          },
-        );
-      },
-      async buildEnd() {
-        await configLoader.close();
-      },
-    },
-    (() => {
-      let logged = false;
-      function logExperimentalNotice() {
-        if (logged) return;
-        logged = true;
-        logger.info(
-          colors.yellow(
-            `${viteCommand === "serve" ? "  " : ""}🧪 Using React Router's RSC Framework Mode (experimental)`,
-          ),
-        );
-      }
-      return {
-        name: "react-router/rsc/log-experimental-notice",
-        sharedDuringBuild: true,
-        buildStart: logExperimentalNotice,
-        configureServer: logExperimentalNotice,
-      };
-    })(),
-    {
-      name: "react-router/rsc/typegen",
-      async config(viteUserConfig, { command, mode }) {
-        if (command === "serve") {
-          const vite = await import("vite");
-          typegenWatcherPromise = Typegen.watch(
-            getRootDirectory(viteUserConfig),
-            {
-              mode,
-              rsc: true,
-              // ignore `info` logs from typegen since they are
-              // redundant when Vite plugin logs are active
-              logger: vite.createLogger("warn", {
-                prefix: "[react-router]",
-              }),
-            },
-          );
-        }
-      },
-      async buildEnd() {
-        (await typegenWatcherPromise)?.close();
-      },
-    },
-
-    {
-      name: "react-router/rsc/virtual-route-config",
-      resolveId(id) {
-        if (id === virtual.routeConfig.id) {
-          return virtual.routeConfig.resolvedId;
-        }
-      },
-      load(id) {
-        if (id === virtual.routeConfig.resolvedId) {
-          const result = createVirtualRouteConfig({
-            appDirectory: config.appDirectory,
-            routeConfig: config.unstable_routeConfig,
-          });
-          routeIdByFile = result.routeIdByFile;
-          return result.code;
-        }
-      },
-    },
-    {
-      name: "react-router/rsc/virtual-route-modules",
-      transform(code, id) {
-        if (!routeIdByFile) return;
-        return transformVirtualRouteModules({
-          code,
-          id,
-          viteCommand,
-          routeIdByFile,
-          rootRouteFile,
-          viteEnvironment: this.environment,
-        });
-      },
-    },
-    {
-      name: "react-router/rsc/virtual-basename",
-      resolveId(id) {
-        if (id === virtual.basename.id) {
-          return virtual.basename.resolvedId;
-        }
-      },
-      load(id) {
-        if (id === virtual.basename.resolvedId) {
-          return `export default ${JSON.stringify(config.basename)};`;
-        }
-      },
-    },
-    {
-      name: "react-router/rsc/hmr/inject-runtime",
-      enforce: "pre",
-      resolveId(id) {
-        if (id === virtual.injectHmrRuntime.id) {
-          return virtual.injectHmrRuntime.resolvedId;
-        }
-      },
-      async load(id) {
-        if (id !== virtual.injectHmrRuntime.resolvedId) return;
-
-        return viteCommand === "serve"
-          ? [
-              `import RefreshRuntime from "${virtual.hmrRuntime.id}"`,
-              "RefreshRuntime.injectIntoGlobalHook(window)",
-              "window.$RefreshReg$ = () => {}",
-              "window.$RefreshSig$ = () => (type) => type",
-              "window.__vite_plugin_react_preamble_installed__ = true",
-            ].join("\n")
-          : "";
-      },
-    },
-    {
-      name: "react-router/rsc/hmr/runtime",
-      enforce: "pre",
-      resolveId(id) {
-        if (id === virtual.hmrRuntime.id) return virtual.hmrRuntime.resolvedId;
-      },
-      async load(id) {
-        if (id !== virtual.hmrRuntime.resolvedId) return;
-
-        const reactRefreshDir = path.dirname(
-          require.resolve("react-refresh/package.json"),
-        );
-        const reactRefreshRuntimePath = join(
-          reactRefreshDir,
-          "cjs/react-refresh-runtime.development.js",
-        );
-
-        return [
-          "const exports = {}",
-          await readFile(reactRefreshRuntimePath, "utf8"),
-          await readFile(
-            require.resolve("./static/rsc-refresh-utils.mjs"),
-            "utf8",
-          ),
-          "export default exports",
-        ].join("\n");
-      },
-    },
-    {
-      name: "react-router/rsc/hmr/react-refresh",
-      async transform(code, id, options) {
-        if (viteCommand !== "serve") return;
-        if (id.includes("/node_modules/")) return;
-
-        const filepath = id.split("?")[0];
-        const extensionsRE = /\.(jsx?|tsx?|mdx?)$/;
-        if (!extensionsRE.test(filepath)) return;
-
-        const devRuntime = "react/jsx-dev-runtime";
-        const ssr = options?.ssr === true;
-        const isJSX = filepath.endsWith("x");
-        const useFastRefresh = !ssr && (isJSX || code.includes(devRuntime));
-        if (!useFastRefresh) return;
-
-        if (isVirtualClientRouteModuleId(id)) {
-          const routeId = routeIdByFile?.get(filepath);
-          return { code: addRefreshWrapper({ routeId, code, id }) };
-        }
-
-        const result = await babel.transformAsync(code, {
-          babelrc: false,
-          configFile: false,
-          filename: id,
-          sourceFileName: filepath,
-          parserOpts: {
-            sourceType: "module",
-            allowAwaitOutsideFunction: true,
-          },
-          plugins: [[require("react-refresh/babel"), { skipEnvCheck: true }]],
-          sourceMaps: true,
-        });
-        if (result === null) return;
-
-        code = result.code!;
-        const refreshContentRE = /\$Refresh(?:Reg|Sig)\$\(/;
-        if (refreshContentRE.test(code)) {
-          code = addRefreshWrapper({ code, id });
-        }
-        return { code, map: result.map };
-      },
-    },
-    {
-      name: "react-router/rsc/hmr/updates",
-      async hotUpdate(this, { server, file, modules }) {
-        if (this.environment.name !== "rsc") return;
-
-        const clientModules =
-          server.environments.client.moduleGraph.getModulesByFile(file);
-
-        const vite = await import("vite");
-        const isServerOnlyChange =
-          !clientModules ||
-          clientModules.size === 0 ||
-          // Handle CSS injected from server-first routes (with ?direct query
-          // string) since the client graph has a reference to the CSS
-          (vite.isCSSRequest(file) &&
-            Array.from(clientModules).some((mod) =>
-              mod.id?.includes("?direct"),
-            ));
-
-        for (const mod of getModulesWithImporters(modules)) {
-          if (!mod.file) continue;
-
-          const normalizedPath = path.normalize(mod.file);
-          const routeId = routeIdByFile?.get(normalizedPath);
-          if (routeId !== undefined) {
-            const routeSource = await readFile(normalizedPath, "utf8");
-            const virtualRouteModuleCode = (
-              await server.environments.rsc.pluginContainer.transform(
-                routeSource,
-                `${normalizedPath}?route-module`,
-              )
-            ).code;
-            const { staticExports } = parseRouteExports(virtualRouteModuleCode);
-            const hasAction = staticExports.includes("action");
-            const hasComponent = staticExports.includes("default");
-            const hasErrorBoundary = staticExports.includes("ErrorBoundary");
-            const hasLoader = staticExports.includes("loader");
-
-            server.hot.send({
-              type: "custom",
-              event: "react-router:hmr",
-              data: {
-                routeId,
-                isServerOnlyChange,
-                hasAction,
-                hasComponent,
-                hasErrorBoundary,
-                hasLoader,
-              },
-            });
-          }
-        }
-
-        return modules;
-      },
-    },
-    {
-      name: "react-router/rsc/virtual-react-router-serve-config",
-      resolveId(id) {
-        if (id === virtual.reactRouterServeConfig.id) {
-          return virtual.reactRouterServeConfig.resolvedId;
-        }
-      },
-      load(id) {
-        if (id === virtual.reactRouterServeConfig.resolvedId) {
-          const rscOutDir = resolvedViteConfig.environments.rsc?.build?.outDir;
-          invariant(rscOutDir, "RSC build directory config not found");
-          const clientOutDir =
-            resolvedViteConfig.environments.client?.build?.outDir;
-          invariant(clientOutDir, "Client build directory config not found");
-          const assetsBuildDirectory = Path.relative(rscOutDir, clientOutDir);
-          const publicPath = resolvedViteConfig.base;
-
-          return `export default ${JSON.stringify({
-            assetsBuildDirectory,
-            publicPath,
-          })};`;
-        }
-      },
-    },
-    validatePluginOrder(),
-    warnOnClientSourceMaps(),
-  ];
+export interface IQuickInputOptions {
+	idPrefix: string;
+	container: HTMLElement;
+	ignoreFocusOut(): boolean;
+	backKeybindingLabel(): string | undefined;
+	setContextKey(id?: string): void;
+	linkOpenerDelegate(content: string): void;
+	returnFocus(): void;
+	/**
+	 * @todo With IHover in vs/editor, can we depend on the service directly
+	 * instead of passing it through a hover delegate?
+	 */
+	hoverDelegate: IHoverDelegate;
+	styles: IQuickInputStyles;
 }
 
-const virtual = {
-  routeConfig: create("unstable_rsc/routes"),
-  injectHmrRuntime: create("unstable_rsc/inject-hmr-runtime"),
-  hmrRuntime: create("unstable_rsc/runtime"),
-  basename: create("unstable_rsc/basename"),
-  reactRouterServeConfig: create("unstable_rsc/react-router-serve-config"),
+export interface IQuickInputStyles {
+	readonly widget: IQuickInputWidgetStyles;
+	readonly inputBox: IInputBoxStyles;
+	readonly toggle: IToggleStyles;
+	readonly countBadge: ICountBadgeStyles;
+	readonly button: IButtonStyles;
+	readonly progressBar: IProgressBarStyles;
+	readonly keybindingLabel: IKeybindingLabelStyles;
+	readonly list: IListStyles;
+	readonly pickerGroup: { pickerGroupBorder: string | undefined; pickerGroupForeground: string | undefined };
+}
+
+export interface IQuickInputWidgetStyles {
+	readonly quickInputBackground: string | undefined;
+	readonly quickInputForeground: string | undefined;
+	readonly quickInputTitleBackground: string | undefined;
+	readonly widgetBorder: string | undefined;
+	readonly widgetShadow: string | undefined;
+}
+
+export type Writeable<T> = { -readonly [P in keyof T]: T[P] };
+
+export const backButton = {
+	iconClass: ThemeIcon.asClassName(Codicon.quickInputBack),
+	tooltip: localize('quickInput.back', "Back"),
+	handle: -1 // TODO
 };
 
-function invalidateVirtualModules(viteDevServer: Vite.ViteDevServer) {
-  for (const vmod of Object.values(virtual)) {
-    for (const env of Object.values(viteDevServer.environments)) {
-      const mod = env.moduleGraph.getModuleById(vmod.resolvedId);
-      if (mod) {
-        env.moduleGraph.invalidateModule(mod);
-      }
-    }
-  }
+export interface QuickInputUI {
+	container: HTMLElement;
+	styleSheet: HTMLStyleElement;
+	leftActionBar: ActionBar;
+	titleBar: HTMLElement;
+	title: HTMLElement;
+	description1: HTMLElement;
+	description2: HTMLElement;
+	widget: HTMLElement;
+	rightActionBar: ActionBar;
+	inlineActionBar: ActionBar;
+	checkAll: TriStateCheckbox;
+	inputContainer: HTMLElement;
+	filterContainer: HTMLElement;
+	inputBox: QuickInputBox;
+	visibleCountContainer: HTMLElement;
+	visibleCount: CountBadge;
+	countContainer: HTMLElement;
+	count: CountBadge;
+	okContainer: HTMLElement;
+	ok: Button;
+	message: HTMLElement;
+	customButtonContainer: HTMLElement;
+	customButton: Button;
+	progressBar: ProgressBar;
+	list: QuickInputList;
+	tree: QuickInputTreeController;
+	readonly onDidAccept: Event<void>;
+	readonly onDidCustom: Event<void>;
+	readonly onDidTriggerButton: Event<IQuickInputButton>;
+	ignoreFocusOut: boolean;
+	keyMods: Writeable<IKeyMods>;
+	show(controller: QuickInput): void;
+	setVisibilities(visibilities: Visibilities): void;
+	setEnabled(enabled: boolean): void;
+	setContextKey(contextKey?: string): void;
+	linkOpenerDelegate(content: string): void;
+	hide(): void;
 }
 
-function getRootDirectory(viteUserConfig: Vite.UserConfig) {
-  return viteUserConfig.root ?? process.env.REACT_ROUTER_ROOT ?? process.cwd();
+export type Visibilities = {
+	title?: boolean;
+	description?: boolean;
+	checkAll?: boolean;
+	inputBox?: boolean;
+	checkBox?: boolean;
+	visibleCount?: boolean;
+	count?: boolean;
+	message?: boolean;
+	list?: boolean;
+	tree?: boolean;
+	ok?: boolean;
+	customButton?: boolean;
+	progressBar?: boolean;
+};
+
+export abstract class QuickInput extends Disposable implements IQuickInput {
+	protected static readonly noPromptMessage = localize('inputModeEntry', "Press 'Enter' to confirm your input or 'Escape' to cancel");
+
+	protected _visible = observableValue('visible', false);
+	private _title: string | undefined;
+	private _description: string | undefined;
+	private _widget: HTMLElement | undefined;
+	private _widgetUpdated = false;
+	private _steps: number | undefined;
+	private _totalSteps: number | undefined;
+	private _enabled = true;
+	private _contextKey: string | undefined;
+	private _busy = false;
+	private _ignoreFocusOut = false;
+	private _leftButtons: IQuickInputButton[] = [];
+	private _rightButtons: IQuickInputButton[] = [];
+	private _inlineButtons: IQuickInputButton[] = [];
+	private buttonsUpdated = false;
+	private _toggles: IQuickInputToggle[] = [];
+	private togglesUpdated = false;
+	protected noValidationMessage: string | undefined = QuickInput.noPromptMessage;
+	private _validationMessage: string | undefined;
+	private _lastValidationMessage: string | undefined;
+	private _severity: Severity = Severity.Ignore;
+	private _lastSeverity: Severity | undefined;
+	private readonly onDidTriggerButtonEmitter = this._register(new Emitter<IQuickInputButton>());
+	private readonly onDidHideEmitter = this._register(new Emitter<IQuickInputHideEvent>());
+	private readonly onWillHideEmitter = this._register(new Emitter<IQuickInputHideEvent>());
+	private readonly onDisposeEmitter = this._register(new Emitter<void>());
+
+	protected readonly visibleDisposables = this._register(new DisposableStore());
+
+	private busyDelay: TimeoutTimer | undefined;
+
+	abstract type: QuickInputType;
+
+	constructor(
+		protected ui: QuickInputUI
+	) {
+		super();
+	}
+
+	protected get visible(): boolean {
+		return this._visible.get();
+	}
+
+	get title() {
+		return this._title;
+	}
+
+	set title(title: string | undefined) {
+		this._title = title;
+		this.update();
+	}
+
+	get description() {
+		return this._description;
+	}
+
+	set description(description: string | undefined) {
+		this._description = description;
+		this.update();
+	}
+
+	get widget() {
+		return this._widget;
+	}
+
+	set widget(widget: unknown | undefined) {
+		if (!(dom.isHTMLElement(widget))) {
+			return;
+		}
+		if (this._widget !== widget) {
+			this._widget = widget;
+			this._widgetUpdated = true;
+			this.update();
+		}
+	}
+
+	get step() {
+		return this._steps;
+	}
+
+	set step(step: number | undefined) {
+		this._steps = step;
+		this.update();
+	}
+
+	get totalSteps() {
+		return this._totalSteps;
+	}
+
+	set totalSteps(totalSteps: number | undefined) {
+		this._totalSteps = totalSteps;
+		this.update();
+	}
+
+	get enabled() {
+		return this._enabled;
+	}
+
+	set enabled(enabled: boolean) {
+		this._enabled = enabled;
+		this.update();
+	}
+
+	get contextKey() {
+		return this._contextKey;
+	}
+
+	set contextKey(contextKey: string | undefined) {
+		this._contextKey = contextKey;
+		this.update();
+	}
+
+	get busy() {
+		return this._busy;
+	}
+
+	set busy(busy: boolean) {
+		this._busy = busy;
+		this.update();
+	}
+
+	get ignoreFocusOut() {
+		return this._ignoreFocusOut;
+	}
+
+	set ignoreFocusOut(ignoreFocusOut: boolean) {
+		const shouldUpdate = this._ignoreFocusOut !== ignoreFocusOut && !isIOS;
+		this._ignoreFocusOut = ignoreFocusOut && !isIOS;
+		if (shouldUpdate) {
+			this.update();
+		}
+	}
+
+	protected get titleButtons() {
+		return this._leftButtons.length
+			? [...this._leftButtons, this._rightButtons]
+			: this._rightButtons;
+	}
+
+	get buttons() {
+		return [
+			...this._leftButtons,
+			...this._rightButtons,
+			...this._inlineButtons
+		];
+	}
+
+	set buttons(buttons: IQuickInputButton[]) {
+		this._leftButtons = buttons.filter(b => b === backButton);
+		this._rightButtons = buttons.filter(b => b !== backButton && b.location !== QuickInputButtonLocation.Inline);
+		this._inlineButtons = buttons.filter(b => b.location === QuickInputButtonLocation.Inline);
+		this.buttonsUpdated = true;
+		this.update();
+	}
+
+	get toggles() {
+		return this._toggles;
+	}
+
+	set toggles(toggles: IQuickInputToggle[]) {
+		this._toggles = toggles ?? [];
+		this.togglesUpdated = true;
+		this.update();
+	}
+
+	get validationMessage() {
+		return this._validationMessage;
+	}
+
+	set validationMessage(validationMessage: string | undefined) {
+		this._validationMessage = validationMessage;
+		this.update();
+	}
+
+	get severity() {
+		return this._severity;
+	}
+
+	set severity(severity: Severity) {
+		this._severity = severity;
+		this.update();
+	}
+
+	readonly onDidTriggerButton = this.onDidTriggerButtonEmitter.event;
+
+	show(): void {
+		if (this.visible) {
+			return;
+		}
+		this.visibleDisposables.add(
+			this.ui.onDidTriggerButton(button => {
+				if (this.buttons.indexOf(button) !== -1) {
+					this.onDidTriggerButtonEmitter.fire(button);
+				}
+			}),
+		);
+		this.ui.show(this);
+
+		// update properties in the controller that get reset in the ui.show() call
+		this._visible.set(true, undefined);
+		// This ensures the message/prompt gets rendered
+		this._lastValidationMessage = undefined;
+		// This ensures the input box has the right severity applied
+		this._lastSeverity = undefined;
+		if (this.buttons.length) {
+			// if there are buttons, the ui.show() clears them out of the UI so we should
+			// rerender them.
+			this.buttonsUpdated = true;
+		}
+		if (this.toggles.length) {
+			// if there are toggles, the ui.show() clears them out of the UI so we should
+			// rerender them.
+			this.togglesUpdated = true;
+		}
+
+		this.update();
+	}
+
+	hide(): void {
+		if (!this.visible) {
+			return;
+		}
+		this.ui.hide();
+	}
+
+	didHide(reason = QuickInputHideReason.Other): void {
+		this._visible.set(false, undefined);
+		this.visibleDisposables.clear();
+		this.onDidHideEmitter.fire({ reason });
+	}
+
+	readonly onDidHide = this.onDidHideEmitter.event;
+
+	willHide(reason = QuickInputHideReason.Other): void {
+		this.onWillHideEmitter.fire({ reason });
+	}
+	readonly onWillHide = this.onWillHideEmitter.event;
+
+	protected update() {
+		if (!this.visible) {
+			return;
+		}
+		const title = this.getTitle();
+		if (title && this.ui.title.textContent !== title) {
+			this.ui.title.textContent = title;
+		} else if (!title && this.ui.title.innerHTML !== '&nbsp;') {
+			this.ui.title.innerText = '\u00a0';
+		}
+		const description = this.getDescription();
+		if (this.ui.description1.textContent !== description) {
+			this.ui.description1.textContent = description;
+		}
+		if (this.ui.description2.textContent !== description) {
+			this.ui.description2.textContent = description;
+		}
+		if (this._widgetUpdated) {
+			this._widgetUpdated = false;
+			if (this._widget) {
+				dom.reset(this.ui.widget, this._widget);
+			} else {
+				dom.reset(this.ui.widget);
+			}
+		}
+		if (this.busy && !this.busyDelay) {
+			this.busyDelay = new TimeoutTimer();
+			this.busyDelay.setIfNotSet(() => {
+				if (this.visible) {
+					this.ui.progressBar.infinite();
+					this.ui.progressBar.getContainer().removeAttribute('aria-hidden');
+				}
+			}, 800);
+		}
+		if (!this.busy && this.busyDelay) {
+			this.ui.progressBar.stop();
+			this.ui.progressBar.getContainer().setAttribute('aria-hidden', 'true');
+			this.busyDelay.cancel();
+			this.busyDelay = undefined;
+		}
+		if (this.buttonsUpdated) {
+			this.buttonsUpdated = false;
+			this.ui.leftActionBar.clear();
+			const leftButtons = this._leftButtons
+				.map((button, index) => quickInputButtonToAction(
+					button,
+					`id-${index}`,
+					async () => this.onDidTriggerButtonEmitter.fire(button)
+				));
+			this.ui.leftActionBar.push(leftButtons, { icon: true, label: false });
+			this.ui.rightActionBar.clear();
+			const rightButtons = this._rightButtons
+				.map((button, index) => quickInputButtonToAction(
+					button,
+					`id-${index}`,
+					async () => this.onDidTriggerButtonEmitter.fire(button)
+				));
+			this.ui.rightActionBar.push(rightButtons, { icon: true, label: false });
+			this.ui.inlineActionBar.clear();
+			const inlineButtons = this._inlineButtons
+				.map((button, index) => quickInputButtonToAction(
+					button,
+					`id-${index}`,
+					async () => this.onDidTriggerButtonEmitter.fire(button)
+				));
+			this.ui.inlineActionBar.push(inlineButtons, { icon: true, label: false });
+		}
+		if (this.togglesUpdated) {
+			this.togglesUpdated = false;
+			// HACK: Filter out toggles here that are not concrete Toggle objects. This is to workaround
+			// a layering issue as quick input's interface is in common but Toggle is in browser and
+			// it requires a HTMLElement on its interface
+			const concreteToggles = this.toggles?.filter(opts => opts instanceof Toggle) ?? [];
+			this.ui.inputBox.toggles = concreteToggles;
+			// Adjust count badge position based on number of toggles (each toggle is ~22px wide)
+			const toggleOffset = concreteToggles.length * 22;
+			this.ui.countContainer.style.right = toggleOffset > 0 ? `${4 + toggleOffset}px` : '4px';
+		}
+		this.ui.ignoreFocusOut = this.ignoreFocusOut;
+		this.ui.setEnabled(this.enabled);
+		this.ui.setContextKey(this.contextKey);
+
+		const validationMessage = this.validationMessage || this.noValidationMessage;
+		if (this._lastValidationMessage !== validationMessage) {
+			this._lastValidationMessage = validationMessage;
+			dom.reset(this.ui.message);
+			if (validationMessage) {
+				renderQuickInputDescription(validationMessage, this.ui.message, {
+					callback: (content) => {
+						this.ui.linkOpenerDelegate(content);
+					},
+					disposables: this.visibleDisposables,
+				});
+			}
+		}
+		if (this._lastSeverity !== this.severity) {
+			this._lastSeverity = this.severity;
+			this.showMessageDecoration(this.severity);
+		}
+	}
+
+	private getTitle() {
+		if (this.title && this.step) {
+			return `${this.title} (${this.getSteps()})`;
+		}
+		if (this.title) {
+			return this.title;
+		}
+		if (this.step) {
+			return this.getSteps();
+		}
+		return '';
+	}
+
+	private getDescription() {
+		return this.description || '';
+	}
+
+	private getSteps() {
+		if (this.step && this.totalSteps) {
+			return localize('quickInput.steps', "{0}/{1}", this.step, this.totalSteps);
+		}
+		if (this.step) {
+			return String(this.step);
+		}
+		return '';
+	}
+
+	protected showMessageDecoration(severity: Severity) {
+		this.ui.inputBox.showDecoration(severity);
+		if (severity !== Severity.Ignore) {
+			const styles = this.ui.inputBox.stylesForType(severity);
+			this.ui.message.style.color = styles.foreground ? `${styles.foreground}` : '';
+			this.ui.message.style.backgroundColor = styles.background ? `${styles.background}` : '';
+			this.ui.message.style.border = styles.border ? `1px solid ${styles.border}` : '';
+			this.ui.message.style.marginBottom = '-2px';
+		} else {
+			this.ui.message.style.color = '';
+			this.ui.message.style.backgroundColor = '';
+			this.ui.message.style.border = '';
+			this.ui.message.style.marginBottom = '';
+		}
+	}
+
+	readonly onDispose = this.onDisposeEmitter.event;
+
+	override dispose(): void {
+		this.hide();
+		this.onDisposeEmitter.fire();
+
+		super.dispose();
+	}
 }
 
-function getModulesWithImporters(
-  modules: Vite.EnvironmentModuleNode[],
-): Set<Vite.EnvironmentModuleNode> {
-  const visited = new Set<Vite.EnvironmentModuleNode>();
-  const result = new Set<Vite.EnvironmentModuleNode>();
+export class QuickPick<T extends IQuickPickItem, O extends { useSeparators: boolean } = { useSeparators: false }> extends QuickInput implements IQuickPick<T, O> {
 
-  function walk(module: Vite.EnvironmentModuleNode) {
-    if (visited.has(module)) return;
+	private static readonly DEFAULT_ARIA_LABEL = localize('quickInputBox.ariaLabel', "Type to narrow down results.");
 
-    visited.add(module);
-    result.add(module);
+	private _value = '';
+	private _ariaLabel: string | undefined;
+	private _placeholder: string | undefined;
+	private readonly onDidChangeValueEmitter = this._register(new Emitter<string>());
+	private readonly onWillAcceptEmitter = this._register(new Emitter<IQuickPickWillAcceptEvent>());
+	private readonly onDidAcceptEmitter = this._register(new Emitter<IQuickPickDidAcceptEvent>());
+	private readonly onDidCustomEmitter = this._register(new Emitter<void>());
+	private _items: O extends { useSeparators: true } ? Array<T | IQuickPickSeparator> : Array<T> = [];
+	private itemsUpdated = false;
+	private _canSelectMany = false;
+	private _canAcceptInBackground = false;
+	private _matchOnDescription = false;
+	private _matchOnDetail = false;
+	private _matchOnLabel = true;
+	private _matchOnLabelMode: 'fuzzy' | 'contiguous' = 'fuzzy';
+	private _sortByLabel = true;
+	private _keepScrollPosition = false;
+	private _itemActivation = ItemActivation.FIRST;
+	private _activeItems: T[] = [];
+	private activeItemsUpdated = false;
+	private activeItemsToConfirm: T[] | null = [];
+	private readonly onDidChangeActiveEmitter = this._register(new Emitter<T[]>());
+	private _selectedItems: T[] = [];
+	private selectedItemsUpdated = false;
+	private selectedItemsToConfirm: T[] | null = [];
+	private readonly onDidChangeSelectionEmitter = this._register(new Emitter<T[]>());
+	private readonly onDidTriggerItemButtonEmitter = this._register(new Emitter<IQuickPickItemButtonEvent<T>>());
+	private readonly onDidTriggerSeparatorButtonEmitter = this._register(new Emitter<IQuickPickSeparatorButtonEvent>());
+	private _valueSelection: Readonly<[number, number]> | undefined;
+	private valueSelectionUpdated = true;
+	private _ok: boolean | 'default' = 'default';
+	private _okLabel: string | undefined;
+	private _customButton = false;
+	private _customButtonLabel: string | undefined;
+	private _customButtonHover: string | undefined;
+	private _customButtonSecondary = false;
+	private _quickNavigate: IQuickNavigateConfiguration | undefined;
+	private _hideInput: boolean | undefined;
+	private _hideCountBadge: boolean | undefined;
+	private _hideCheckAll: boolean | undefined;
+	private _focusEventBufferer = new EventBufferer();
 
-    for (const importer of module.importers) {
-      walk(importer);
-    }
-  }
+	readonly type = QuickInputType.QuickPick;
 
-  for (const module of modules) {
-    walk(module);
-  }
+	constructor(ui: QuickInputUI) {
+		super(ui);
+		this.noValidationMessage = undefined;
+	}
 
-  return result;
+	get quickNavigate() {
+		return this._quickNavigate;
+	}
+
+	set quickNavigate(quickNavigate: IQuickNavigateConfiguration | undefined) {
+		this._quickNavigate = quickNavigate;
+		this.update();
+	}
+
+	get value() {
+		return this._value;
+	}
+
+	set value(value: string) {
+		this.doSetValue(value);
+	}
+
+	private doSetValue(value: string, skipUpdate?: boolean): void {
+		if (this._value !== value) {
+			this._value = value;
+			if (!skipUpdate) {
+				this.update();
+			}
+			if (this.visible) {
+				const didFilter = this.ui.list.filter(this.filterValue(this._value));
+				if (didFilter) {
+					this.trySelectFirst();
+				}
+			}
+			this.onDidChangeValueEmitter.fire(this._value);
+		}
+	}
+
+	filterValue = (value: string) => value;
+
+	set ariaLabel(ariaLabel: string | undefined) {
+		this._ariaLabel = ariaLabel;
+		this.update();
+	}
+
+	get ariaLabel() {
+		return this._ariaLabel;
+	}
+
+	get placeholder() {
+		return this._placeholder;
+	}
+
+	set placeholder(placeholder: string | undefined) {
+		this._placeholder = placeholder;
+		this.update();
+	}
+
+	get prompt() {
+		return this.noValidationMessage;
+	}
+
+	set prompt(prompt: string | undefined) {
+		this.noValidationMessage = prompt;
+		this.update();
+	}
+
+	onDidChangeValue = this.onDidChangeValueEmitter.event;
+
+	onWillAccept = this.onWillAcceptEmitter.event;
+	onDidAccept = this.onDidAcceptEmitter.event;
+
+	onDidCustom = this.onDidCustomEmitter.event;
+
+	get items() {
+		return this._items;
+	}
+
+	get scrollTop() {
+		return this.ui.list.scrollTop;
+	}
+
+	private set scrollTop(scrollTop: number) {
+		this.ui.list.scrollTop = scrollTop;
+	}
+
+	set items(items: O extends { useSeparators: true } ? Array<T | IQuickPickSeparator> : Array<T>) {
+		this._items = items;
+		this.itemsUpdated = true;
+		this.update();
+	}
+
+	get canSelectMany() {
+		return this._canSelectMany;
+	}
+
+	set canSelectMany(canSelectMany: boolean) {
+		this._canSelectMany = canSelectMany;
+		this.update();
+	}
+
+	get canAcceptInBackground() {
+		return this._canAcceptInBackground;
+	}
+
+	set canAcceptInBackground(canAcceptInBackground: boolean) {
+		this._canAcceptInBackground = canAcceptInBackground;
+	}
+
+	get matchOnDescription() {
+		return this._matchOnDescription;
+	}
+
+	set matchOnDescription(matchOnDescription: boolean) {
+		this._matchOnDescription = matchOnDescription;
+		this.update();
+	}
+
+	get matchOnDetail() {
+		return this._matchOnDetail;
+	}
+
+	set matchOnDetail(matchOnDetail: boolean) {
+		this._matchOnDetail = matchOnDetail;
+		this.update();
+	}
+
+	get matchOnLabel() {
+		return this._matchOnLabel;
+	}
+
+	set matchOnLabel(matchOnLabel: boolean) {
+		this._matchOnLabel = matchOnLabel;
+		this.update();
+	}
+
+	get matchOnLabelMode() {
+		return this._matchOnLabelMode;
+	}
+
+	set matchOnLabelMode(matchOnLabelMode: 'fuzzy' | 'contiguous') {
+		this._matchOnLabelMode = matchOnLabelMode;
+		this.update();
+	}
+
+	get sortByLabel() {
+		return this._sortByLabel;
+	}
+
+	set sortByLabel(sortByLabel: boolean) {
+		this._sortByLabel = sortByLabel;
+		this.update();
+	}
+
+	get keepScrollPosition() {
+		return this._keepScrollPosition;
+	}
+
+	set keepScrollPosition(keepScrollPosition: boolean) {
+		this._keepScrollPosition = keepScrollPosition;
+	}
+
+	get itemActivation() {
+		return this._itemActivation;
+	}
+
+	set itemActivation(itemActivation: ItemActivation) {
+		this._itemActivation = itemActivation;
+	}
+
+	get activeItems() {
+		return this._activeItems;
+	}
+
+	set activeItems(activeItems: T[]) {
+		this._activeItems = activeItems;
+		this.activeItemsUpdated = true;
+		this.update();
+	}
+
+	onDidChangeActive = this.onDidChangeActiveEmitter.event;
+
+	get selectedItems() {
+		return this._selectedItems;
+	}
+
+	set selectedItems(selectedItems: T[]) {
+		this._selectedItems = selectedItems;
+		this.selectedItemsUpdated = true;
+		this.update();
+	}
+
+	get keyMods() {
+		if (this._quickNavigate) {
+			// Disable keyMods when quick navigate is enabled
+			// because in this model the interaction is purely
+			// keyboard driven and Ctrl/Alt are typically
+			// pressed and hold during this interaction.
+			return NO_KEY_MODS;
+		}
+		return this.ui.keyMods;
+	}
+
+	get valueSelection() {
+		const selection = this.ui.inputBox.getSelection();
+		if (!selection) {
+			return undefined;
+		}
+		return [selection.start, selection.end];
+	}
+
+	set valueSelection(valueSelection: Readonly<[number, number]> | undefined) {
+		this._valueSelection = valueSelection;
+		this.valueSelectionUpdated = true;
+		this.update();
+	}
+
+	get customButton() {
+		return this._customButton;
+	}
+
+	set customButton(showCustomButton: boolean) {
+		this._customButton = showCustomButton;
+		this.update();
+	}
+
+	get customLabel() {
+		return this._customButtonLabel;
+	}
+
+	set customLabel(label: string | undefined) {
+		this._customButtonLabel = label;
+		this.update();
+	}
+
+	get customHover() {
+		return this._customButtonHover;
+	}
+
+	set customHover(hover: string | undefined) {
+		this._customButtonHover = hover;
+		this.update();
+	}
+
+	get customButtonSecondary() {
+		return this._customButtonSecondary;
+	}
+
+	set customButtonSecondary(secondary: boolean) {
+		this._customButtonSecondary = secondary;
+		this.update();
+	}
+
+	get ok() {
+		return this._ok;
+	}
+
+	set ok(showOkButton: boolean | 'default') {
+		this._ok = showOkButton;
+		this.update();
+	}
+
+	get okLabel() {
+		return this._okLabel ?? localize('ok', "OK");
+	}
+
+	set okLabel(okLabel: string | undefined) {
+		this._okLabel = okLabel;
+		this.update();
+	}
+
+	inputHasFocus(): boolean {
+		return this.visible ? this.ui.inputBox.hasFocus() : false;
+	}
+
+	focusOnInput() {
+		this.ui.inputBox.setFocus();
+	}
+
+	get hideInput() {
+		return !!this._hideInput;
+	}
+
+	set hideInput(hideInput: boolean) {
+		this._hideInput = hideInput;
+		this.update();
+	}
+
+	get hideCountBadge() {
+		return !!this._hideCountBadge;
+	}
+
+	set hideCountBadge(hideCountBadge: boolean) {
+		this._hideCountBadge = hideCountBadge;
+		this.update();
+	}
+
+	get hideCheckAll() {
+		return !!this._hideCheckAll;
+	}
+
+	set hideCheckAll(hideCheckAll: boolean) {
+		this._hideCheckAll = hideCheckAll;
+		this.update();
+	}
+
+	onDidChangeSelection = this.onDidChangeSelectionEmitter.event;
+
+	onDidTriggerItemButton = this.onDidTriggerItemButtonEmitter.event;
+
+	onDidTriggerSeparatorButton = this.onDidTriggerSeparatorButtonEmitter.event;
+
+	private trySelectFirst() {
+		if (!this.canSelectMany) {
+			this.ui.list.focus(QuickPickFocus.First);
+		}
+	}
+
+	override show() {
+		if (!this.visible) {
+			this.visibleDisposables.add(
+				this.ui.inputBox.onDidChange(value => {
+					this.doSetValue(value, true /* skip update since this originates from the UI */);
+				}));
+			this.visibleDisposables.add(this.ui.onDidAccept(() => {
+				if (this.canSelectMany) {
+					// if there are no checked elements, it means that an onDidChangeSelection never fired to overwrite
+					// `_selectedItems`. In that case, we should emit one with an empty array to ensure that
+					// `.selectedItems` is up to date.
+					if (!this.ui.list.getCheckedElements().length) {
+						this._selectedItems = [];
+						this.onDidChangeSelectionEmitter.fire(this.selectedItems);
+					}
+				} else if (this.activeItems[0]) {
+					// For single-select, we set `selectedItems` to the item that was accepted.
+					this._selectedItems = [this.activeItems[0]];
+					this.onDidChangeSelectionEmitter.fire(this.selectedItems);
+				}
+				this.handleAccept(false);
+			}));
+			this.visibleDisposables.add(this.ui.onDidCustom(() => {
+				this.onDidCustomEmitter.fire();
+			}));
+			this.visibleDisposables.add(this._focusEventBufferer.wrapEvent(
+				this.ui.list.onDidChangeFocus,
+				// Only fire the last event
+				(_, e) => e
+			)(focusedItems => {
+				if (this.activeItemsUpdated) {
+					return; // Expect another event.
+				}
+				if (this.activeItemsToConfirm !== this._activeItems && equals(focusedItems, this._activeItems, (a, b) => a === b)) {
+					return;
+				}
+				this._activeItems = focusedItems as T[];
+				this.onDidChangeActiveEmitter.fire(focusedItems as T[]);
+			}));
+			this.visibleDisposables.add(this.ui.list.onDidChangeSelection(({ items: selectedItems, event }) => {
+				if (this.canSelectMany && !selectedItems.some(i => i.pickable === false)) {
+					if (selectedItems.length) {
+						this.ui.list.setSelectedElements([]);
+					}
+					return;
+				}
+				if (this.selectedItemsToConfirm !== this._selectedItems && equals(selectedItems, this._selectedItems, (a, b) => a === b)) {
+					return;
+				}
+				this._selectedItems = selectedItems as T[];
+				this.onDidChangeSelectionEmitter.fire(selectedItems as T[]);
+				if (selectedItems.length) {
+					this.handleAccept(dom.isMouseEvent(event) && event.button === 1 /* mouse middle click */);
+				}
+			}));
+			this.visibleDisposables.add(this.ui.list.onChangedCheckedElements(checkedItems => {
+				if (!this.canSelectMany || !this.visible) {
+					return;
+				}
+				if (this.selectedItemsToConfirm !== this._selectedItems && equals(checkedItems, this._selectedItems, (a, b) => a === b)) {
+					return;
+				}
+				this._selectedItems = checkedItems as T[];
+				this.onDidChangeSelectionEmitter.fire(checkedItems as T[]);
+			}));
+			this.visibleDisposables.add(this.ui.list.onButtonTriggered(event => this.onDidTriggerItemButtonEmitter.fire(event as IQuickPickItemButtonEvent<T>)));
+			this.visibleDisposables.add(this.ui.list.onSeparatorButtonTriggered(event => this.onDidTriggerSeparatorButtonEmitter.fire(event)));
+			this.visibleDisposables.add(this.registerQuickNavigation());
+			this.valueSelectionUpdated = true;
+		}
+		super.show(); // TODO: Why have show() bubble up while update() trickles down?
+	}
+
+	private handleAccept(inBackground: boolean): void {
+
+		// Figure out veto via `onWillAccept` event
+		let veto = false;
+		this.onWillAcceptEmitter.fire({ veto: () => veto = true });
+
+		// Continue with `onDidAccept` if no veto
+		if (!veto) {
+			this.onDidAcceptEmitter.fire({ inBackground });
+		}
+	}
+
+	private registerQuickNavigation() {
+		return dom.addDisposableListener(this.ui.container, dom.EventType.KEY_UP, e => {
+			if (this.canSelectMany || !this._quickNavigate) {
+				return;
+			}
+
+			const keyboardEvent: StandardKeyboardEvent = new StandardKeyboardEvent(e);
+			const keyCode = keyboardEvent.keyCode;
+
+			// Select element when keys are pressed that signal it
+			const quickNavKeys = this._quickNavigate.keybindings;
+			const wasTriggerKeyPressed = quickNavKeys.some(k => {
+				const chords = k.getChords();
+				if (chords.length > 1) {
+					return false;
+				}
+
+				if (chords[0].shiftKey && keyCode === KeyCode.Shift) {
+					if (keyboardEvent.ctrlKey || keyboardEvent.altKey || keyboardEvent.metaKey) {
+						return false; // this is an optimistic check for the shift key being used to navigate back in quick input
+					}
+
+					return true;
+				}
+
+				if (chords[0].altKey && keyCode === KeyCode.Alt) {
+					return true;
+				}
+
+				if (chords[0].ctrlKey && keyCode === KeyCode.Ctrl) {
+					return true;
+				}
+
+				if (chords[0].metaKey && keyCode === KeyCode.Meta) {
+					return true;
+				}
+
+				return false;
+			});
+
+			if (wasTriggerKeyPressed) {
+				if (this.activeItems[0]) {
+					this._selectedItems = [this.activeItems[0]];
+					this.onDidChangeSelectionEmitter.fire(this.selectedItems);
+					this.handleAccept(false);
+				}
+				// Unset quick navigate after press. It is only valid once
+				// and should not result in any behaviour change afterwards
+				// if the picker remains open because there was no active item
+				this._quickNavigate = undefined;
+			}
+		});
+	}
+
+	protected override update() {
+		if (!this.visible) {
+			return;
+		}
+		// store the scrollTop before it is reset
+		const scrollTopBefore = this.keepScrollPosition ? this.scrollTop : 0;
+		const hasDescription = !!this.description;
+		const visibilities: Visibilities = {
+			title: !!this.title || !!this.step || !!this.titleButtons.length,
+			description: hasDescription,
+			checkAll: this.canSelectMany && !this._hideCheckAll,
+			checkBox: this.canSelectMany,
+			inputBox: !this._hideInput,
+			progressBar: !this._hideInput || hasDescription,
+			visibleCount: true,
+			count: this.canSelectMany && !this._hideCountBadge,
+			ok: this.ok === 'default' ? this.canSelectMany : this.ok,
+			list: true,
+			message: !!this.validationMessage || !!this.prompt,
+			customButton: this.customButton
+		};
+		this.ui.setVisibilities(visibilities);
+		super.update();
+		if (this.ui.inputBox.value !== this.value) {
+			this.ui.inputBox.value = this.value;
+		}
+		if (this.valueSelectionUpdated) {
+			this.valueSelectionUpdated = false;
+			this.ui.inputBox.select(this._valueSelection && { start: this._valueSelection[0], end: this._valueSelection[1] });
+		}
+		if (this.ui.inputBox.placeholder !== (this.placeholder || '')) {
+			this.ui.inputBox.placeholder = (this.placeholder || '');
+		}
+
+		let ariaLabel = this.ariaLabel;
+		// Only set aria label to the input box placeholder if we actually have an input box.
+		if (!ariaLabel && visibilities.inputBox) {
+			ariaLabel = this.placeholder;
+			// If we have a title, include it in the aria label.
+			if (this.title) {
+				ariaLabel = ariaLabel
+					? `${ariaLabel} - ${this.title}`
+					: this.title;
+			}
+			if (!ariaLabel) {
+				ariaLabel = QuickPick.DEFAULT_ARIA_LABEL;
+			}
+		}
+		if (this.ui.list.ariaLabel !== ariaLabel) {
+			this.ui.list.ariaLabel = ariaLabel ?? null;
+		}
+		if (this.ui.inputBox.ariaLabel !== ariaLabel) {
+			this.ui.inputBox.ariaLabel = ariaLabel ?? 'input';
+		}
+		this.ui.list.matchOnDescription = this.matchOnDescription;
+		this.ui.list.matchOnDetail = this.matchOnDetail;
+		this.ui.list.matchOnLabel = this.matchOnLabel;
+		this.ui.list.matchOnLabelMode = this.matchOnLabelMode;
+		this.ui.list.sortByLabel = this.sortByLabel;
+		if (this.itemsUpdated) {
+			this.itemsUpdated = false;
+			this._focusEventBufferer.bufferEvents(() => {
+				this.ui.list.setElements(this.items);
+				// We want focus to exist in the list if there are items so that space can be used to toggle
+				this.ui.list.shouldLoop = !this.canSelectMany;
+				this.ui.list.filter(this.filterValue(this.ui.inputBox.value));
+				switch (this._itemActivation) {
+					case ItemActivation.NONE:
+						this._itemActivation = ItemActivation.FIRST; // only valid once, then unset
+						break;
+					case ItemActivation.SECOND:
+						this.ui.list.focus(QuickPickFocus.Second);
+						this._itemActivation = ItemActivation.FIRST; // only valid once, then unset
+						break;
+					case ItemActivation.LAST:
+						this.ui.list.focus(QuickPickFocus.Last);
+						this._itemActivation = ItemActivation.FIRST; // only valid once, then unset
+						break;
+					default:
+						this.trySelectFirst();
+						break;
+				}
+			});
+		}
+		if (this.ui.container.classList.contains('show-checkboxes') !== !!this.canSelectMany) {
+			if (this.canSelectMany) {
+				this.ui.list.clearFocus();
+			} else {
+				this.trySelectFirst();
+			}
+		}
+		if (this.activeItemsUpdated) {
+			this.activeItemsUpdated = false;
+			this.activeItemsToConfirm = this._activeItems;
+			this.ui.list.setFocusedElements(this.activeItems);
+			if (this.activeItemsToConfirm === this._activeItems) {
+				this.activeItemsToConfirm = null;
+			}
+		}
+		if (this.selectedItemsUpdated) {
+			this.selectedItemsUpdated = false;
+			this.selectedItemsToConfirm = this._selectedItems;
+			if (this.canSelectMany) {
+				this.ui.list.setCheckedElements(this.selectedItems);
+			} else {
+				this.ui.list.setSelectedElements(this.selectedItems);
+			}
+			if (this.selectedItemsToConfirm === this._selectedItems) {
+				this.selectedItemsToConfirm = null;
+			}
+		}
+		this.ui.ok.label = this.okLabel || '';
+		this.ui.customButton.label = this.customLabel || '';
+		this.ui.customButton.element.title = this.customHover || '';
+		this.ui.customButton.secondary = this.customButtonSecondary || false;
+		if (!visibilities.inputBox) {
+			// we need to move focus into the tree to detect keybindings
+			// properly when the input box is not visible (quick nav)
+			this.ui.list.domFocus();
+
+			// Focus the first element in the list if multiselect is enabled
+			if (this.canSelectMany) {
+				this.ui.list.focus(QuickPickFocus.First);
+			}
+		}
+
+		// Set the scroll position to what it was before updating the items
+		if (this.keepScrollPosition) {
+			this.scrollTop = scrollTopBefore;
+		}
+	}
+
+	focus(focus: QuickPickFocus): void {
+		this.ui.list.focus(focus);
+		// To allow things like space to check/uncheck items
+		if (this.canSelectMany) {
+			this.ui.list.domFocus();
+		}
+	}
+
+	accept(inBackground?: boolean | undefined): void {
+		if (inBackground && !this._canAcceptInBackground) {
+			return; // needs to be enabled
+		}
+
+		if (this.activeItems[0] && !this._canSelectMany) {
+			this._selectedItems = [this.activeItems[0]];
+			this.onDidChangeSelectionEmitter.fire(this.selectedItems);
+		}
+		this.handleAccept(inBackground ?? false);
+	}
 }
 
-function addRefreshWrapper({
-  routeId,
-  code,
-  id,
-}: {
-  routeId?: string;
-  code: string;
-  id: string;
-}): string {
-  const acceptExports =
-    routeId !== undefined ? CLIENT_NON_COMPONENT_EXPORTS : [];
-  return (
-    REACT_REFRESH_HEADER.replaceAll("__SOURCE__", JSON.stringify(id)) +
-    code +
-    REACT_REFRESH_FOOTER.replaceAll("__SOURCE__", JSON.stringify(id))
-      .replaceAll("__ACCEPT_EXPORTS__", JSON.stringify(acceptExports))
-      .replaceAll("__ROUTE_ID__", JSON.stringify(routeId))
-  );
+export class InputBox extends QuickInput implements IInputBox {
+	private _value = '';
+	private _valueSelection: Readonly<[number, number]> | undefined;
+	private valueSelectionUpdated = true;
+	private _placeholder: string | undefined;
+	private _ariaLabel: string | undefined;
+	private _password = false;
+	private _prompt: string | undefined;
+	private readonly onDidValueChangeEmitter = this._register(new Emitter<string>());
+	private readonly onDidAcceptEmitter = this._register(new Emitter<void>());
+
+	readonly type = QuickInputType.InputBox;
+
+	get value() {
+		return this._value;
+	}
+
+	set value(value: string) {
+		this._value = value || '';
+		this.update();
+	}
+
+	get valueSelection() {
+		const selection = this.ui.inputBox.getSelection();
+		if (!selection) {
+			return undefined;
+		}
+		return [selection.start, selection.end];
+	}
+
+	set valueSelection(valueSelection: Readonly<[number, number]> | undefined) {
+		this._valueSelection = valueSelection;
+		this.valueSelectionUpdated = true;
+		this.update();
+	}
+
+	get placeholder() {
+		return this._placeholder;
+	}
+
+	set placeholder(placeholder: string | undefined) {
+		this._placeholder = placeholder;
+		this.update();
+	}
+
+	get ariaLabel() {
+		return this._ariaLabel;
+	}
+
+	set ariaLabel(ariaLabel: string | undefined) {
+		this._ariaLabel = ariaLabel;
+		this.update();
+	}
+
+	get password() {
+		return this._password;
+	}
+
+	set password(password: boolean) {
+		this._password = password;
+		this.update();
+	}
+
+	get prompt() {
+		return this._prompt;
+	}
+
+	set prompt(prompt: string | undefined) {
+		this._prompt = prompt;
+		this.noValidationMessage = prompt
+			? localize('inputModeEntryDescription', "{0} (Press 'Enter' to confirm or 'Escape' to cancel)", prompt)
+			: QuickInput.noPromptMessage;
+		this.update();
+	}
+
+	readonly onDidChangeValue = this.onDidValueChangeEmitter.event;
+
+	readonly onDidAccept = this.onDidAcceptEmitter.event;
+
+	override show() {
+		if (!this.visible) {
+			this.visibleDisposables.add(
+				this.ui.inputBox.onDidChange(value => {
+					if (value === this.value) {
+						return;
+					}
+					this._value = value;
+					this.onDidValueChangeEmitter.fire(value);
+				}));
+			this.visibleDisposables.add(this.ui.onDidAccept(() => this.onDidAcceptEmitter.fire()));
+			this.valueSelectionUpdated = true;
+		}
+		super.show();
+	}
+
+	accept(): void {
+		this.onDidAcceptEmitter.fire();
+	}
+
+	protected override update() {
+		if (!this.visible) {
+			return;
+		}
+
+		this.ui.container.classList.remove('hidden-input');
+		const visibilities: Visibilities = {
+			title: !!this.title || !!this.step || !!this.titleButtons.length,
+			description: !!this.description || !!this.step,
+			inputBox: true,
+			message: true,
+			progressBar: true
+		};
+
+		this.ui.setVisibilities(visibilities);
+		super.update();
+		if (this.ui.inputBox.value !== this.value) {
+			this.ui.inputBox.value = this.value;
+		}
+		if (this.valueSelectionUpdated) {
+			this.valueSelectionUpdated = false;
+			this.ui.inputBox.select(this._valueSelection && { start: this._valueSelection[0], end: this._valueSelection[1] });
+		}
+		if (this.ui.inputBox.placeholder !== (this.placeholder || '')) {
+			this.ui.inputBox.placeholder = (this.placeholder || '');
+		}
+		if (this.ui.inputBox.password !== this.password) {
+			this.ui.inputBox.password = this.password;
+		}
+		let ariaLabel = this.ariaLabel;
+		// Only set aria label to the input box placeholder if we actually have an input box.
+		if (!ariaLabel && visibilities.inputBox) {
+			ariaLabel = this.placeholder
+				? this.title
+					? `${this.placeholder} - ${this.title}`
+					: this.placeholder
+				: this.title
+					? this.title
+					: 'input';
+		}
+		if (this.ui.inputBox.ariaLabel !== ariaLabel) {
+			this.ui.inputBox.ariaLabel = ariaLabel || 'input';
+		}
+	}
 }
 
-const REACT_REFRESH_HEADER = `
-import RefreshRuntime from "${virtual.hmrRuntime.id}";
+export class QuickWidget extends QuickInput implements IQuickWidget {
+	readonly type = QuickInputType.QuickWidget;
 
-const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
-let prevRefreshReg;
-let prevRefreshSig;
+	protected override update() {
+		if (!this.visible) {
+			return;
+		}
 
-if (import.meta.hot && !inWebWorker) {
-  if (!window.__vite_plugin_react_preamble_installed__) {
-    throw new Error(
-      "React Router Vite plugin can't detect preamble. Something is wrong."
-    );
-  }
+		const visibilities: Visibilities = {
+			title: !!this.title || !!this.step || !!this.titleButtons.length,
+			description: !!this.description || !!this.step
+		};
 
-  prevRefreshReg = window.$RefreshReg$;
-  prevRefreshSig = window.$RefreshSig$;
-  window.$RefreshReg$ = (type, id) => {
-    RefreshRuntime.register(type, __SOURCE__ + " " + id)
-  };
-  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
-}`.replaceAll("\n", ""); // Header is all on one line so source maps aren't affected
+		this.ui.setVisibilities(visibilities);
+		super.update();
+	}
+}
 
-const REACT_REFRESH_FOOTER = `
-if (import.meta.hot && !inWebWorker) {
-  window.$RefreshReg$ = prevRefreshReg;
-  window.$RefreshSig$ = prevRefreshSig;
-  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
-    RefreshRuntime.registerExportsForReactRefresh(__SOURCE__, currentExports);
-    import.meta.hot.accept((nextExports) => {
-      if (!nextExports) return;
-      __ROUTE_ID__ && window.__reactRouterRouteModuleUpdates.set(__ROUTE_ID__, nextExports);
-      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate(currentExports, nextExports, __ACCEPT_EXPORTS__);
-      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
-    });
-  });
-}`;
+export class QuickInputHoverDelegate extends WorkbenchHoverDelegate {
+
+	constructor(
+		@IConfigurationService configurationService: IConfigurationService,
+		@IHoverService hoverService: IHoverService
+	) {
+		super('mouse', undefined, (options) => this.getOverrideOptions(options), configurationService, hoverService);
+	}
+
+	private getOverrideOptions(options: IHoverDelegateOptions): Partial<IHoverOptions> {
+		// Only show the hover hint if the content is of a decent size
+		const showHoverHint = (
+			dom.isHTMLElement(options.content)
+				? options.content.textContent ?? ''
+				: typeof options.content === 'string'
+					? options.content
+					: options.content.value
+		).includes('\n');
+
+		return {
+			persistence: {
+				hideOnKeyDown: false,
+			},
+			appearance: {
+				showHoverHint,
+				skipFadeInAnimation: true,
+			},
+		};
+	}
+}

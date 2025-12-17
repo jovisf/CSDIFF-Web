@@ -1,59 +1,50 @@
-import { Action as ReduxAction } from '../..'
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+import { RouteParamtypes } from '../../../common/enums/route-paramtypes.enum';
+import { PipesConsumer } from '../../pipes/pipes-consumer';
 
-namespace FSA {
-  interface Action<P> extends ReduxAction {
-    payload: P
-  }
+const createPipe = (transform: Function) => ({ transform });
 
-  const action: Action<string> = {
-    type: 'ACTION_TYPE',
-    payload: 'test'
-  }
+describe('PipesConsumer', () => {
+  let consumer: PipesConsumer;
+  beforeEach(() => {
+    consumer = new PipesConsumer();
+  });
+  describe('apply', () => {
+    let value, metatype, type, stringifiedType, transforms, data;
+    beforeEach(() => {
+      value = 0;
+      data = null;
+      (metatype = {}), (type = RouteParamtypes.QUERY);
+      stringifiedType = 'query';
+      transforms = [
+        createPipe(sinon.stub().callsFake(val => val + 1)),
+        createPipe(sinon.stub().callsFake(val => Promise.resolve(val + 1))),
+        createPipe(sinon.stub().callsFake(val => val + 1)),
+      ];
+    });
+    it('should call all transform functions', done => {
+      /* eslint-disable-next-line @typescript-eslint/no-floating-promises */
+      consumer.apply(value, { metatype, type, data }, transforms).then(() => {
+        expect(
+          transforms.reduce(
+            (prev, next) => prev && next.transform.called,
+            true,
+          ),
+        ).to.be.true;
 
-  const payload: string = action.payload
-}
-
-namespace FreeShapeAction {
-  interface Action extends ReduxAction {
-    [key: string]: any
-  }
-
-  const action: Action = {
-    type: 'ACTION_TYPE',
-    text: 'test'
-  }
-
-  const text: string = action['text']
-}
-
-namespace StringLiteralTypeAction {
-  type ActionType = 'A' | 'B' | 'C'
-
-  interface Action extends ReduxAction {
-    type: ActionType
-  }
-
-  const action: Action = {
-    type: 'A'
-  }
-
-  const type: ActionType = action.type
-}
-
-namespace EnumTypeAction {
-  enum ActionType {
-    A,
-    B,
-    C
-  }
-
-  interface Action extends ReduxAction {
-    type: ActionType
-  }
-
-  const action: Action = {
-    type: ActionType.A
-  }
-
-  const type: ActionType = action.type
-}
+        done();
+      });
+    });
+    it('should return expected result', done => {
+      const expectedResult = 3;
+      /* eslint-disable-next-line @typescript-eslint/no-floating-promises */
+      consumer
+        .apply(value, { metatype, type, data }, transforms)
+        .then(result => {
+          expect(result).to.be.eql(expectedResult);
+          done();
+        });
+    });
+  });
+});

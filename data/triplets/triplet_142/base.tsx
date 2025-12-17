@@ -1,78 +1,44 @@
-import React from 'react';
-import { makeStyles } from '@material-ui/core/styles';
-import Grid from '@material-ui/core/Grid';
-import Button from '@material-ui/core/Button';
-import Tooltip from '@material-ui/core/Tooltip';
+<<<<<<< HEAD
+=======
 
-const useStyles = makeStyles({
-  root: {
-    width: 500,
-  },
-});
+>>>>>>> origin/main
+import { Metadata} from 'next';
+import Navigation from '../components/Navigation';
+import Footer from '../components/Footer';
 
-export default function PositionedTooltips() {
-  const classes = useStyles();
+export const metadata: Metadata = {
+  title: 'Page - Zion Tech Group',
+  description: 'Professional page services by Zion Tech Group.',
+  keywords: 'page, services, technology, AI, IT solutions'
+};
 
+const PagePage = () => {
   return (
-    <div className={classes.root}>
-      <Grid container justify="center">
-        <Grid item>
-          <Tooltip title="Add" placement="top-start">
-            <Button>top-start</Button>
-          </Tooltip>
-          <Tooltip title="Add" placement="top">
-            <Button>top</Button>
-          </Tooltip>
-          <Tooltip title="Add" placement="top-end">
-            <Button>top-end</Button>
-          </Tooltip>
-        </Grid>
-      </Grid>
-      <Grid container justify="center">
-        <Grid item xs={6}>
-          <Tooltip title="Add" placement="left-start">
-            <Button>left-start</Button>
-          </Tooltip>
-          <br />
-          <Tooltip title="Add" placement="left">
-            <Button>left</Button>
-          </Tooltip>
-          <br />
-          <Tooltip title="Add" placement="left-end">
-            <Button>left-end</Button>
-          </Tooltip>
-        </Grid>
-        <Grid item container xs={6} alignItems="flex-end" direction="column">
-          <Grid item>
-            <Tooltip title="Add" placement="right-start">
-              <Button>right-start</Button>
-            </Tooltip>
-          </Grid>
-          <Grid item>
-            <Tooltip title="Add" placement="right">
-              <Button>right</Button>
-            </Tooltip>
-          </Grid>
-          <Grid item>
-            <Tooltip title="Add" placement="right-end">
-              <Button>right-end</Button>
-            </Tooltip>
-          </Grid>
-        </Grid>
-      </Grid>
-      <Grid container justify="center">
-        <Grid item>
-          <Tooltip title="Add" placement="bottom-start">
-            <Button>bottom-start</Button>
-          </Tooltip>
-          <Tooltip title="Add" placement="bottom">
-            <Button>bottom</Button>
-          </Tooltip>
-          <Tooltip title="Add" placement="bottom-end">
-            <Button>bottom-end</Button>
-          </Tooltip>
-        </Grid>
-      </Grid>
+    <div className="min-h-screen bg-white">
+      <Navigation />
+      
+      <section className="pt-20 pb-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <h1 className="text-4xl md:text-6xl font-bold text-white mb-6">
+            Page
+          </h1>
+          <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-8">
+            Professional page services by Zion Tech Group.
+          </p>
+          <div className="space-y-4">
+            <p className="text-gray-400">
+              Our page solutions are designed to help your business grow and succeed.
+            </p>
+            <p className="text-gray-400">
+              Contact us to learn more about how we can help you achieve your goals.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <Footer />
     </div>
   );
-}
+};
+
+export default PagePage;

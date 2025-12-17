@@ -1,230 +1,498 @@
-import type { Action, UnknownAction } from './actions'
-import type { Reducer } from './reducers'
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import _$$observable from '../utils/symbol-observable'
+import { InjectionToken, Provider, Scope, Injectable } from '@nestjs/common';
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+import { setTimeout } from 'timers/promises';
+import { ContextIdFactory } from '../helpers/context-id-factory';
+import { NestContainer } from '../injector/container';
+import { Injector } from '../injector/injector';
+import { InstanceLoader } from '../injector/instance-loader';
+import { GraphInspector } from '../inspector/graph-inspector';
+import { NestApplicationContext } from '../nest-application-context';
 
-/**
- * A *dispatching function* (or simply *dispatch function*) is a function that
- * accepts an action or an async action; it then may or may not dispatch one
- * or more actions to the store.
- *
- * We must distinguish between dispatching functions in general and the base
- * `dispatch` function provided by the store instance without any middleware.
- *
- * The base dispatch function *always* synchronously sends an action to the
- * store's reducer, along with the previous state returned by the store, to
- * calculate a new state. It expects actions to be plain objects ready to be
- * consumed by the reducer.
- *
- * Middleware wraps the base dispatch function. It allows the dispatch
- * function to handle async actions in addition to actions. Middleware may
- * transform, delay, ignore, or otherwise interpret actions or async actions
- * before passing them to the next middleware.
- *
- * @template A The type of things (actions or otherwise) which may be
- *   dispatched.
- */
-export interface Dispatch<A extends Action = UnknownAction> {
-  <T extends A>(action: T, ...extraArgs: any[]): T
-}
+describe('NestApplicationContext', () => {
+  class A {}
 
-/**
- * Function to remove listener added by `Store.subscribe()`.
- */
-export interface Unsubscribe {
-  (): void
-}
+  async function testHelper(
+    injectionKey: InjectionToken,
+    scope: Scope,
+    additionalProviders: Array<Provider> = [],
+  ): Promise<NestApplicationContext> {
+    const nestContainer = new NestContainer();
+    const injector = new Injector();
+    const instanceLoader = new InstanceLoader(
+      nestContainer,
+      injector,
+      new GraphInspector(nestContainer),
+    );
+    const { moduleRef } = (await nestContainer.addModule(class T {}, []))!;
 
-export type ListenerCallback = () => void
+    nestContainer.addProvider(
+      {
+        provide: injectionKey,
+        useClass: A,
+        scope,
+      },
+      moduleRef.token,
+    );
 
-declare global {
-  interface SymbolConstructor {
-    readonly observable: symbol
+    for (const provider of additionalProviders) {
+      nestContainer.addProvider(provider, moduleRef.token);
+    }
+
+    nestContainer.addInjectable(
+      {
+        provide: injectionKey,
+        useClass: A,
+        scope,
+      },
+      moduleRef.token,
+      'interceptor',
+    );
+
+    const modules = nestContainer.getModules();
+    await instanceLoader.createInstancesOfDependencies(modules);
+
+    const applicationContext = new NestApplicationContext(nestContainer);
+    return applicationContext;
   }
-}
 
-/**
- * A minimal observable of state changes.
- * For more information, see the observable proposal:
- * https://github.com/tc39/proposal-observable
- */
-export type Observable<T> = {
-  /**
-   * The minimal observable subscription method.
-   * @param {Object} observer Any object that can be used as an observer.
-   * The observer object should have a `next` method.
-   * @returns {subscription} An object with an `unsubscribe` method that can
-   * be used to unsubscribe the observable from the store, and prevent further
-   * emission of values from the observable.
-   */
-  subscribe: (observer: Observer<T>) => { unsubscribe: Unsubscribe }
-  [Symbol.observable](): Observable<T>
-}
+  describe('listenToShutdownSignals', () => {
+    it('shutdown process should not be interrupted by another handler', async () => {
+      const signal = 'SIGTERM';
+      let processUp = true;
+      let promisesResolved = false;
+      const applicationContext = await testHelper(A, Scope.DEFAULT);
+      applicationContext.enableShutdownHooks([signal]);
 
-/**
- * An Observer is used to receive data from an Observable, and is supplied as
- * an argument to subscribe.
- */
-export type Observer<T> = {
-  next?(value: T): void
-}
+      const waitProcessDown = new Promise(resolve => {
+        const shutdownCleanupRef = applicationContext['shutdownCleanupRef'];
+        const handler = () => {
+          if (
+            !process
+              .listeners(signal)
+              .find(handler => handler == shutdownCleanupRef)
+          ) {
+            processUp = false;
+            process.removeListener(signal, handler);
+            resolve(undefined);
+          }
+          return undefined;
+        };
+        process.on(signal, handler);
+      });
 
-/**
- * A store is an object that holds the application's state tree.
- * There should only be a single store in a Redux app, as the composition
- * happens on the reducer level.
- *
- * @template S The type of state held by this store.
- * @template A the type of actions which may be dispatched by this store.
- * @template StateExt any extension to state from store enhancers
- */
-export interface Store<
-  S = any,
-  A extends Action = UnknownAction,
-  StateExt extends {} = {}
-> {
-  /**
-   * Dispatches an action. It is the only way to trigger a state change.
-   *
-   * The `reducer` function, used to create the store, will be called with the
-   * current state tree and the given `action`. Its return value will be
-   * considered the **next** state of the tree, and the change listeners will
-   * be notified.
-   *
-   * The base implementation only supports plain object actions. If you want
-   * to dispatch a Promise, an Observable, a thunk, or something else, you
-   * need to wrap your store creating function into the corresponding
-   * middleware. For example, see the documentation for the `redux-thunk`
-   * package. Even the middleware will eventually dispatch plain object
-   * actions using this method.
-   *
-   * @param action A plain object representing “what changed”. It is a good
-   *   idea to keep actions serializable so you can record and replay user
-   *   sessions, or use the time travelling `redux-devtools`. An action must
-   *   have a `type` property which may not be `undefined`. It is a good idea
-   *   to use string constants for action types.
-   *
-   * @returns For convenience, the same action object you dispatched.
-   *
-   * Note that, if you use a custom middleware, it may wrap `dispatch()` to
-   * return something else (for example, a Promise you can await).
-   */
-  dispatch: Dispatch<A>
+      // add some third party handler
+      process.on(signal, signal => {
+        // do some work
+        process.kill(process.pid, signal);
+      });
 
-  /**
-   * Reads the state tree managed by the store.
-   *
-   * @returns The current state tree of your application.
-   */
-  getState(): S & StateExt
+      const hookStub = sinon
+        .stub(applicationContext as any, 'callShutdownHook')
+        .callsFake(async () => {
+          // run some async code
+          await new Promise(resolve => setImmediate(() => resolve(undefined)));
+          if (processUp) {
+            promisesResolved = true;
+          }
+        });
+      process.kill(process.pid, signal);
+      await waitProcessDown;
+      hookStub.restore();
+      expect(processUp).to.be.false;
+      expect(promisesResolved).to.be.true;
+    });
 
-  /**
-   * Adds a change listener. It will be called any time an action is
-   * dispatched, and some part of the state tree may potentially have changed.
-   * You may then call `getState()` to read the current state tree inside the
-   * callback.
-   *
-   * You may call `dispatch()` from a change listener, with the following
-   * caveats:
-   *
-   * 1. The subscriptions are snapshotted just before every `dispatch()` call.
-   * If you subscribe or unsubscribe while the listeners are being invoked,
-   * this will not have any effect on the `dispatch()` that is currently in
-   * progress. However, the next `dispatch()` call, whether nested or not,
-   * will use a more recent snapshot of the subscription list.
-   *
-   * 2. The listener should not expect to see all states changes, as the state
-   * might have been updated multiple times during a nested `dispatch()` before
-   * the listener is called. It is, however, guaranteed that all subscribers
-   * registered before the `dispatch()` started will be called with the latest
-   * state by the time it exits.
-   *
-   * @param listener A callback to be invoked on every dispatch.
-   * @returns A function to remove this change listener.
-   */
-  subscribe(listener: ListenerCallback): Unsubscribe
+    it('should defer shutdown until all init hooks are resolved', async () => {
+      const clock = sinon.useFakeTimers({
+        toFake: ['setTimeout'],
+      });
+      const signal = 'SIGTERM';
 
-  /**
-   * Replaces the reducer currently used by the store to calculate the state.
-   *
-   * You might need this if your app implements code splitting and you want to
-   * load some of the reducers dynamically. You might also need this if you
-   * implement a hot reloading mechanism for Redux.
-   *
-   * @param nextReducer The reducer for the store to use instead.
-   */
-  replaceReducer(nextReducer: Reducer<S, A>): void
+      const onModuleInitStub = sinon.stub();
+      const onApplicationShutdownStub = sinon.stub();
 
-  /**
-   * Interoperability point for observable/reactive libraries.
-   * @returns {observable} A minimal observable of state changes.
-   * For more information, see the observable proposal:
-   * https://github.com/tc39/proposal-observable
-   */
-  [Symbol.observable](): Observable<S & StateExt>
-}
+      class B {
+        async onModuleInit() {
+          await setTimeout(5000);
+          onModuleInitStub();
+        }
 
-/**
- * A store creator is a function that creates a Redux store. Like with
- * dispatching function, we must distinguish the base store creator,
- * `createStore(reducer, preloadedState)` exported from the Redux package, from
- * store creators that are returned from the store enhancers.
- *
- * @template S The type of state to be held by the store.
- * @template A The type of actions which may be dispatched.
- * @template PreloadedState The initial state that is passed into the reducer.
- * @template Ext Store extension that is mixed in to the Store type.
- * @template StateExt State extension that is mixed into the state type.
- */
-export interface StoreCreator {
-  <S, A extends Action, Ext extends {} = {}, StateExt extends {} = {}>(
-    reducer: Reducer<S, A>,
-    enhancer?: StoreEnhancer<Ext, StateExt>
-  ): Store<S, A, StateExt> & Ext
-  <
-    S,
-    A extends Action,
-    Ext extends {} = {},
-    StateExt extends {} = {},
-    PreloadedState = S
-  >(
-    reducer: Reducer<S, A, PreloadedState>,
-    preloadedState?: PreloadedState | undefined,
-    enhancer?: StoreEnhancer<Ext>
-  ): Store<S, A, StateExt> & Ext
-}
+        async onApplicationShutdown() {
+          await setTimeout(1000);
+          onApplicationShutdownStub();
+        }
+      }
 
-/**
- * A store enhancer is a higher-order function that composes a store creator
- * to return a new, enhanced store creator. This is similar to middleware in
- * that it allows you to alter the store interface in a composable way.
- *
- * Store enhancers are much the same concept as higher-order components in
- * React, which are also occasionally called “component enhancers”.
- *
- * Because a store is not an instance, but rather a plain-object collection of
- * functions, copies can be easily created and modified without mutating the
- * original store. There is an example in `compose` documentation
- * demonstrating that.
- *
- * Most likely you'll never write a store enhancer, but you may use the one
- * provided by the developer tools. It is what makes time travel possible
- * without the app being aware it is happening. Amusingly, the Redux
- * middleware implementation is itself a store enhancer.
- *
- * @template Ext Store extension that is mixed into the Store type.
- * @template StateExt State extension that is mixed into the state type.
- */
-export type StoreEnhancer<Ext extends {} = {}, StateExt extends {} = {}> = <
-  NextExt extends {},
-  NextStateExt extends {}
->(
-  next: StoreEnhancerStoreCreator<NextExt, NextStateExt>
-) => StoreEnhancerStoreCreator<NextExt & Ext, NextStateExt & StateExt>
-export type StoreEnhancerStoreCreator<
-  Ext extends {} = {},
-  StateExt extends {} = {}
-> = <S, A extends Action, PreloadedState>(
-  reducer: Reducer<S, A, PreloadedState>,
-  preloadedState?: PreloadedState | undefined
-) => Store<S, A, StateExt> & Ext
+      const applicationContext = await testHelper(A, Scope.DEFAULT, [
+        { provide: B, useClass: B, scope: Scope.DEFAULT },
+      ]);
+      applicationContext.enableShutdownHooks([signal]);
+
+      const ignoreProcessSignal = () => {
+        // noop to prevent process from exiting
+      };
+      process.on(signal, ignoreProcessSignal);
+
+      const deferredShutdown = async () => {
+        await setTimeout(1);
+        process.kill(process.pid, signal);
+      };
+      void Promise.all([applicationContext.init(), deferredShutdown()]);
+
+      await clock.nextAsync();
+      expect(onModuleInitStub.called).to.be.false;
+      expect(onApplicationShutdownStub.called).to.be.false;
+
+      await clock.nextAsync();
+      expect(onModuleInitStub.called).to.be.true;
+      expect(onApplicationShutdownStub.called).to.be.false;
+
+      await clock.nextAsync();
+      expect(onModuleInitStub.called).to.be.true;
+      expect(onApplicationShutdownStub.called).to.be.true;
+
+      clock.restore();
+    });
+  });
+
+  describe('get', () => {
+    describe('when scope = DEFAULT', () => {
+      it('should get value with function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.get(key);
+        const a2: A = await applicationContext.get(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+
+      it('should get value with string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.get(key);
+        const a2: A = await applicationContext.get(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+
+      it('should get value with symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.get(key);
+        const a2: A = await applicationContext.get(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+    });
+
+    describe('when scope = REQUEST', () => {
+      it('should throw error when use function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+
+      it('should throw error when use string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+
+      it('should throw error when use symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+    });
+
+    describe('when scope = TRANSIENT', () => {
+      it('should throw error when use function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+
+      it('should throw error when use string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+
+      it('should throw error when use symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        expect(() => applicationContext.get(key)).to.be.throw;
+      });
+    });
+  });
+
+  describe('resolve', () => {
+    describe('when scope = DEFAULT', () => {
+      it('should resolve value with function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+
+      it('should resolve value with string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+
+      it('should resolve value with symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.DEFAULT);
+
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).equal(a2);
+      });
+    });
+
+    describe('when scope = REQUEST', () => {
+      it('should resolve value with function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+
+      it('should resolve value with string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+
+      it('should resolve value with symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.REQUEST);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+    });
+
+    describe('when scope = TRANSIENT', () => {
+      it('should resolve value with function injection key', async () => {
+        const key = A;
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+
+      it('should resolve value with string injection key', async () => {
+        const key = 'KEY_A';
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+
+      it('should resolve value with symbol injection key', async () => {
+        const key = Symbol('KEY_A');
+        const applicationContext = await testHelper(key, Scope.TRANSIENT);
+
+        const contextId = ContextIdFactory.create();
+        const a1: A = await applicationContext.resolve(key);
+        const a2: A = await applicationContext.resolve(key, contextId);
+        const a3: A = await applicationContext.resolve(key, contextId);
+
+        expect(a1).instanceOf(A);
+        expect(a2).instanceOf(A);
+        expect(a1).not.equal(a2);
+        expect(a2).equal(a3);
+      });
+    });
+  });
+
+  describe('implicit request scope via enhancers', () => {
+    it('get() should throw when dependency tree is not static (request-scoped enhancer attached)', async () => {
+      class Host {}
+      @Injectable({ scope: Scope.REQUEST })
+      class ReqScopedPipe {}
+
+      const nestContainer = new NestContainer();
+      const injector = new Injector();
+      const instanceLoader = new InstanceLoader(
+        nestContainer,
+        injector,
+        new GraphInspector(nestContainer),
+      );
+      const { moduleRef } = (await nestContainer.addModule(class T {}, []))!;
+
+      // Register Host as a controller (matches real-world controller case)
+      nestContainer.addController(Host, moduleRef.token);
+
+      // Register a request-scoped injectable and attach it as an enhancer to Host
+      // This simulates a method-level pipe/guard/interceptor making Host implicitly request-scoped
+      nestContainer.addInjectable(ReqScopedPipe, moduleRef.token, 'pipe', Host);
+
+      const modules = nestContainer.getModules();
+      await instanceLoader.createInstancesOfDependencies(modules);
+
+      const appCtx = new NestApplicationContext(nestContainer);
+
+      // With a non-static dependency tree, get() should refuse and instruct to use resolve()
+      expect(() => appCtx.get(Host)).to.throw();
+    });
+
+    it('resolve() should instantiate when dependency tree is not static (request-scoped enhancer attached)', async () => {
+      class Host {}
+      @Injectable({ scope: Scope.REQUEST })
+      class ReqScopedPipe {}
+
+      const nestContainer = new NestContainer();
+      const injector = new Injector();
+      const instanceLoader = new InstanceLoader(
+        nestContainer,
+        injector,
+        new GraphInspector(nestContainer),
+      );
+      const { moduleRef } = (await nestContainer.addModule(class T {}, []))!;
+
+      // Register Host as a controller
+      nestContainer.addController(Host, moduleRef.token);
+
+      nestContainer.addInjectable(ReqScopedPipe, moduleRef.token, 'pipe', Host);
+
+      const modules = nestContainer.getModules();
+      await instanceLoader.createInstancesOfDependencies(modules);
+
+      const appCtx = new NestApplicationContext(nestContainer);
+
+      const instance = await appCtx.resolve(Host);
+      expect(instance).instanceOf(Host);
+    });
+  });
+
+  describe('resolve with each: true', () => {
+    it('should resolve all default-scoped providers registered under the same token', async () => {
+      class Service1 {}
+      class Service2 {}
+      class Service3 {}
+      const TOKEN = 'MULTI_TOKEN';
+
+      const nestContainer = new NestContainer();
+      const injector = new Injector();
+      const instanceLoader = new InstanceLoader(
+        nestContainer,
+        injector,
+        new GraphInspector(nestContainer),
+      );
+
+      // Create three modules, each with a provider under the same token
+      const { moduleRef: module1 } = (await nestContainer.addModule(
+        class Module1 {},
+        [],
+      ))!;
+      const { moduleRef: module2 } = (await nestContainer.addModule(
+        class Module2 {},
+        [],
+      ))!;
+      const { moduleRef: module3 } = (await nestContainer.addModule(
+        class Module3 {},
+        [],
+      ))!;
+
+      nestContainer.addProvider(
+        { provide: TOKEN, useClass: Service1 },
+        module1.token,
+      );
+      nestContainer.addProvider(
+        { provide: TOKEN, useClass: Service2 },
+        module2.token,
+      );
+      nestContainer.addProvider(
+        { provide: TOKEN, useClass: Service3 },
+        module3.token,
+      );
+
+      const modules = nestContainer.getModules();
+      await instanceLoader.createInstancesOfDependencies(modules);
+
+      const appCtx = new NestApplicationContext(nestContainer);
+
+      const instances = await appCtx.resolve(TOKEN, undefined, {
+        strict: false,
+        each: true,
+      });
+
+      expect(instances).to.be.an('array');
+      expect(instances).to.have.length(3);
+      expect(instances[0]).to.be.instanceOf(Service1);
+      expect(instances[1]).to.be.instanceOf(Service2);
+      expect(instances[2]).to.be.instanceOf(Service3);
+    });
+  });
+});

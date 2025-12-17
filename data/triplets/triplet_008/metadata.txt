@@ -1,12 +1,13 @@
 Triplet ID: 8
-Original File: packages/react-router/__tests__/router/utils/data-router-setup.ts
-Extension: .ts
-Commit SHA: 112589a91cef6c9ba32341101599a79e7588d445
-Base SHA: 13abd8084ad3b829d8182c7180b3f3cc55e1d565
-Left SHA: 0715840b2c60cfc8d555c3ed87db154e437279cf
-Right SHA: c2cb6013d35565f3f5920366a60d4a444a347ef3
+Original File: app/ai-mobile-builder/page.tsx
+Extension: .tsx
+Commit SHA: bc2d6771928a0621f5fab834b690cf3cf7ac318b
+Base SHA: 841a2869cc11d8ce846b1f9d9c05cc6cdd428e85
+Left SHA: 1721d981014877658620c8ef0dbf495ddbd2617a
+Right SHA: 45e9e454453c6d56334958de45068bb150d3c255
 
 File Sizes:
-  Base: 22953 bytes
-  Left: 22978 bytes
-  Right: 22978 bytes
+  Base:   162 bytes
+  Left:   92 bytes
+  Right:  200 bytes
+  Merged: 200 bytes (GABARITO)

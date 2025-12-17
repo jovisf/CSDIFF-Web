@@ -1,12 +1,13 @@
 Triplet ID: 19
-Original File: test/typescript/actionCreators.ts
-Extension: .ts
-Commit SHA: b24dd683231621cb7e61b2c1320984163adcde6f
-Base SHA: d4d08d0438711ea7528fc3c5c11da00cd120a991
-Left SHA: abaabba00e60e026d5b0573a19974c90183f6abd
-Right SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
+Original File: app/contact/page.tsx
+Extension: .tsx
+Commit SHA: bc2d6771928a0621f5fab834b690cf3cf7ac318b
+Base SHA: 841a2869cc11d8ce846b1f9d9c05cc6cdd428e85
+Left SHA: 1721d981014877658620c8ef0dbf495ddbd2617a
+Right SHA: 45e9e454453c6d56334958de45068bb150d3c255
 
 File Sizes:
-  Base: 1549 bytes
-  Left: 1575 bytes
-  Right: 1549 bytes
+  Base:   11610 bytes
+  Left:   11296 bytes
+  Right:  200 bytes
+  Merged: 200 bytes (GABARITO)

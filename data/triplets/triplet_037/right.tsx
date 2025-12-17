@@ -1,18 +1,10 @@
-import * as React from 'react';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-import TextField from '@mui/material/TextField';
+import React from 'react';
 
-const theme = createTheme({
-  direction: 'rtl', // Both here and <body dir="rtl">
-});
-
-export default function Direction() {
+export default function HomePage() {
   return (
-    <ThemeProvider theme={theme}>
-      <div dir="rtl">
-        <TextField placeholder="Name" variant="standard" />
-        <input type="text" placeholder="Name" />
-      </div>
-    </ThemeProvider>
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
   );
 }

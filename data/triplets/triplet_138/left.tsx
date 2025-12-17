@@ -1,6 +1,10 @@
 import React from 'react';
-import TextareaAutosize from '@material-ui/core/TextareaAutosize';
 
-export default function MinHeightTextarea() {
-  return <TextareaAutosize aria-label="minimum height" minRows={3} placeholder="Minimum 3 rows" />;
+export default function HomePage() {
+  return (
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
+  );
 }

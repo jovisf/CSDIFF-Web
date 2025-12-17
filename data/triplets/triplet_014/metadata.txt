@@ -1,12 +1,13 @@
 Triplet ID: 14
-Original File: src/types/reducers.ts
-Extension: .ts
-Commit SHA: f0593c47170d6cf6b62bce585680d1e2d337b147
-Base SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
-Left SHA: 02073c492a3113fac9fb0c6395b47fed8eed24b9
-Right SHA: fc00cae8e5574da485be3e7df5aa8e897e2db264
+Original File: app/components/SEOEnhancer.tsx
+Extension: .tsx
+Commit SHA: bc2d6771928a0621f5fab834b690cf3cf7ac318b
+Base SHA: 841a2869cc11d8ce846b1f9d9c05cc6cdd428e85
+Left SHA: 1721d981014877658620c8ef0dbf495ddbd2617a
+Right SHA: 45e9e454453c6d56334958de45068bb150d3c255
 
 File Sizes:
-  Base: 3516 bytes
-  Left: 3480 bytes
-  Right: 3521 bytes
+  Base:   4636 bytes
+  Left:   4326 bytes
+  Right:  209 bytes
+  Merged: 209 bytes (GABARITO)

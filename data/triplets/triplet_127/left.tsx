@@ -1,27 +1,10 @@
 import React from 'react';
-import Box from '@material-ui/core/Box';
 
-export default function AlignSelf() {
+export default function HomePage() {
   return (
-    <div style={{ width: '100%' }}>
-      <Box
-        display="flex"
-        alignItems="flex-start"
-        p={1}
-        m={1}
-        bgcolor="background.paper"
-        sx={{ height: 100 }}
-      >
-        <Box p={1} bgcolor="grey.300">
-          Item 1
-        </Box>
-        <Box p={1} bgcolor="grey.300" alignSelf="flex-end">
-          Item 2
-        </Box>
-        <Box p={1} bgcolor="grey.300">
-          Item 3
-        </Box>
-      </Box>
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
     </div>
   );
 }

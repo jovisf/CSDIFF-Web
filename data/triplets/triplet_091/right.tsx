@@ -1,20 +1,10 @@
-import * as React from 'react';
-import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
+import React from 'react';
 
-function MyComponent() {
-  const theme = useTheme();
-  const matches = useMediaQuery(theme.breakpoints.up('sm'));
-
-  return <span>{`theme.breakpoints.up('sm') matches: ${matches}`}</span>;
-}
-
-const theme = createTheme();
-
-export default function ThemeHelper() {
+export default function HomePage() {
   return (
-    <ThemeProvider theme={theme}>
-      <MyComponent />
-    </ThemeProvider>
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
   );
 }

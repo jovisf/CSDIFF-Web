@@ -1,64 +1,307 @@
-import {
-  ActionCreator,
-  Action,
-  Dispatch,
-  bindActionCreators,
-  ActionCreatorsMapObject
-} from 'redux'
+import { css, FlattenSimpleInterpolation, Keyframes, keyframes } from 'styled-components'
 
-interface AddTodoAction extends Action {
-  text: string
+/**
+ * `Theme` defines the data used to style the application.
+ */
+export type Theme = {
+  colors: {
+
+    /**
+     * The primary color.
+     */
+    primary: Color
+
+    /**
+     * The secondary color.
+     */
+    secondary: Color
+
+    /**
+     * The tertiary color.
+     */
+    tertiary: Color
+
+    /**
+     * A lighter color, used for contrasts.
+     */
+    light: Color
+
+    /**
+     * The success color.
+     */
+    success: Color
+
+    /**
+     * The error color.
+     */
+    error: Color
+
+    /**
+     * The warning color.
+     */
+    warning: Color
+
+    /**
+     * The info color.
+     */
+    info: Color
+
+    /**
+     * A grey color, used for disabled or less relevant elements.
+     */
+    grey: Color
+
+    /**
+     * The active color, used for currently selected elements.
+     */
+    active: Color
+
+    /**
+     * The activeClosed color, used for currently selected elements that are already closed.
+     */
+    activeClosed: Color
+  }
+  fonts: {
+
+    /**
+     * The font used for headings and titles.
+     */
+    heading: string
+
+    /**
+     * The font used for any normal text.
+     */
+    body: string
+    sizes: {
+
+      /**
+       * The root font size.
+       */
+      root: string,
+
+      /**
+       * Small font size in relation to the root size.
+       */
+      small: string,
+    }
+  }
+  breakpoints: {
+    [K in Breakpoint]: {
+
+      /**
+       * The minimum breakpoint size.
+       */
+      min: number
+
+      /**
+       * The maximum breakpoint size.
+       */
+      max: number
+    }
+  }
+  transitions: {
+
+    /**
+     * Transition used for sliding something into view.
+     */
+    slideIn: string;
+
+    /**
+     * Transition used for sliding something out of view.
+     */
+    slideOut: string;
+  }
+  animations: {
+
+    /**
+     * CSS animation definitions.
+     */
+    [K in AnimationName]: Animation
+  }
 }
 
-const addTodo: ActionCreator<AddTodoAction, [string]> = text => ({
-  type: 'ADD_TODO',
-  text
-})
+export type Breakpoint =
+  | 'xs'
+  | 'sm'
+  | 'md'
+  | 'lg'
+  | 'xl'
+  | 'xxl'
 
-const addTodoAction: AddTodoAction = addTodo('test')
+export type AnimationName =
+  | 'shake'
 
-type AddTodoThunk = (dispatch: Dispatch) => AddTodoAction
+export interface Animation {
+  name: Keyframes
+  duration: number
+  timing: string
+}
 
-const addTodoViaThunk: ActionCreator<AddTodoThunk> = text => (_: Dispatch) => ({
-  type: 'ADD_TODO',
-  text
-})
+export type ColorName = keyof Theme['colors']
 
-declare const dispatch: Dispatch
+export interface Color {
+  value: string
+  contrast: string
+  hover: string
+}
 
-function bound() {
-  const boundAddTodo = bindActionCreators(addTodo, dispatch)
+export const contrastDark = '#051A27'
+export const contrastLight = '#F3F8FC'
 
-  const dispatchedAddTodoAction: AddTodoAction = boundAddTodo('test')
-
-  const boundAddTodoViaThunk = bindActionCreators<
-    ActionCreator<AddTodoThunk, [string]>,
-    ActionCreator<AddTodoAction, [string]>
-  >(addTodoViaThunk, dispatch)
-
-  const dispatchedAddTodoViaThunkAction: AddTodoAction =
-    boundAddTodoViaThunk('test')
-
-  const boundActionCreators = bindActionCreators({ addTodo }, dispatch)
-
-  const otherDispatchedAddTodoAction: AddTodoAction =
-    boundActionCreators.addTodo('test')
-
-  interface M extends ActionCreatorsMapObject {
-    addTodoViaThunk: ActionCreator<AddTodoThunk, [string]>
-  }
-
-  interface N extends ActionCreatorsMapObject {
-    addTodoViaThunk: ActionCreator<AddTodoAction, [string]>
-  }
-
-  const boundActionCreators2 = bindActionCreators<M, N>(
-    {
-      addTodoViaThunk
+export const defaultTheme: Theme = {
+  colors: {
+    primary: {
+      value: '#1980C3',
+      contrast: contrastLight,
+      hover: '#0B72B5',
     },
-    dispatch
-  )
-
-  const otherDispatchedAddTodoAction2: AddTodoAction =
-    boundActionCreators2.addTodoViaThunk('test')
+    secondary: {
+      value: '#DBEBF7',
+      contrast: contrastDark,
+      hover: '#D1E0EB',
+    },
+    tertiary: {
+      value: '#BDD7EA',
+      contrast: contrastDark,
+      hover: '#B4CFE3',
+    },
+    light: {
+      value: contrastLight,
+      contrast: contrastDark,
+      hover: '#EDF1F4',
+    },
+    success: {
+      value: '#05A74E',
+      contrast: contrastLight,
+      hover: '#0B9F4E',
+    },
+    error: {
+      value: '#FF4D4F',
+      contrast: contrastLight,
+      hover: '#EE4F51',
+    },
+    warning: {
+      value: '#FAAD14',
+      contrast: contrastDark,
+      hover: '#ECA519',
+    },
+    info: {
+      value: '#7465C6',
+      contrast: contrastLight,
+      hover: '#6857C8',
+    },
+    grey: {
+      value: '#E2E9ED',
+      contrast: contrastDark,
+      hover: '#DDE5EB',
+    },
+    active: {
+      value: '#EFF6FB',
+      contrast: contrastDark,
+      hover: '#B4CFE3',
+    },
+    activeClosed: {
+      value: '#EFF4F8',
+      contrast: '#BFBFBF',
+      hover: '#e2e8ec',
+    },
+  },
+  fonts: {
+    heading: 'Inter, sans-serif',
+    body: 'Inter, sans-serif',
+    sizes: {
+      root: '16px',
+      small: '0.9em',
+    },
+  },
+  breakpoints: {
+    xs: {
+      min: 0,
+      max: 639.99,
+    },
+    sm: {
+      min: 640,
+      max: 767.99,
+    },
+    md: {
+      min: 768,
+      max: 1_023.99,
+    },
+    lg: {
+      min: 1_024,
+      max: 1_535.99,
+    },
+    xl: {
+      min: 1_536,
+      max: 2_047.99,
+    },
+    xxl: {
+      min: 2_048,
+      max: Number.MAX_SAFE_INTEGER,
+    },
+  },
+  transitions: {
+    slideIn: 'cubic-bezier(0.23, 1, 0.32, 1) 300ms',
+    slideOut: 'cubic-bezier(calc(1 - 0.32), 0, calc(1 - 0.23), 0) 300ms',
+  },
+  animations: {
+    shake: {
+      duration: 600,
+      timing: 'ease',
+      name: keyframes`
+        10%, 90% {
+          transform: translateX(-1px);
+        }
+        20%, 80% {
+          transform: translateX(2px);
+        }
+        30%, 50%, 70% {
+          transform: translateX(-4px);
+        }
+        40%, 60% {
+          transform: translateX(4px);
+        }
+      `,
+    },
+  },
 }
+
+interface ThemedProps {
+  theme: Theme
+}
+
+class ThemedType {
+  readonly media: ThemedMedia = Object.keys(defaultTheme.breakpoints).reduce((themed, breakpoint) => {
+    themed[breakpoint] = {
+      min: ({ theme }) => (
+        `@media (min-width: ${theme.breakpoints[breakpoint].min}px)`
+      ),
+      max: ({ theme }) => (
+        `@media (max-width: ${theme.breakpoints[breakpoint].max}px)`
+      ),
+      only: ({ theme }) => (
+        `@media (min-width: ${theme.breakpoints[breakpoint].min}px) and (max-width: ${theme.breakpoints[breakpoint].max}px)`
+      ),
+    }
+    return themed
+  }, {} as ThemedMedia)
+
+  readonly animations: ThemedAnimations = Object.keys(defaultTheme.animations).reduce((themed, animationName) => {
+    themed[animationName] = ({ theme }) => {
+      const animation = theme.animations[animationName]
+      return css`${animation.duration}ms ${animation.timing} ${animation.name}`
+    }
+    return themed
+  }, {} as ThemedAnimations)
+}
+export const Themed = new ThemedType()
+
+type ThemedFn = (props: ThemedProps) => string | FlattenSimpleInterpolation
+
+type ThemedMedia = Record<Breakpoint, {
+  only: ThemedFn
+  min: ThemedFn
+  max: ThemedFn
+}>
+
+type ThemedAnimations = Record<AnimationName, ThemedFn>

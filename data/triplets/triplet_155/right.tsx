@@ -1,18 +1,10 @@
-import * as React from 'react';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-import Typography from '@mui/material/Typography';
+import React from 'react';
 
-const theme = createTheme({
-  typography: {
-    // Tell MUI what the font-size on the html element is.
-    htmlFontSize: 10,
-  },
-});
-
-export default function FontSizeTheme() {
+export default function HomePage() {
   return (
-    <ThemeProvider theme={theme}>
-      <Typography>body1</Typography>
-    </ThemeProvider>
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
   );
 }
