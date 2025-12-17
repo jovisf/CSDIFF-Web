@@ -4,7 +4,7 @@ Coleta métricas e gera relatórios CSV.
 
 Este módulo é responsável por:
 1. Coletar resultados de múltiplas execuções
-2. Calcular métricas (conflitos, FP, FN, tempo)
+2. Calcular métricas (conflitos, erros, tempo)
 3. Gerar CSV comparativo
 4. Gerar estatísticas agregadas
 """
@@ -58,7 +58,7 @@ class ResultCollector:
             tool_results: Resultados de cada ferramenta:
                 {
                     'csdiff-web': {...},
-                    'diff3': {...},
+                    'mergiraf': {...},
                     'slow-diff3': {...}
                 }
             merged_content: Conteúdo do merge real (GABARITO)
@@ -102,22 +102,20 @@ class ResultCollector:
             {
                 'csdiff_web_success': bool,
                 'csdiff_web_conflicts': int,
-                'csdiff_web_output': str,  # Resultado do merge (para comparar com gabarito)
-                'csdiff_web_time': float,
-                'slow_diff3_success': bool,
+                'mergiraf_success': bool,
                 ...
             }
         """
         flattened = {}
 
         for tool_name, result in tool_results.items():
-            # Normalizar nome (remover hífens)
+            # Normalizar nome (remover hífens para facilitar leitura no CSV/Pandas)
             prefix = tool_name.replace('-', '_')
 
             flattened[f'{prefix}_success'] = result.get('success', False)
             flattened[f'{prefix}_has_conflict'] = result.get('has_conflict', None)
             flattened[f'{prefix}_num_conflicts'] = result.get('num_conflicts', None)
-            flattened[f'{prefix}_output'] = result.get('result', '')  # Resultado do merge (para comparar com gabarito)
+            flattened[f'{prefix}_output'] = result.get('result', '')  # Resultado do merge
             flattened[f'{prefix}_time'] = result.get('execution_time', None)
             flattened[f'{prefix}_error'] = result.get('error', None)
 
@@ -143,11 +141,12 @@ class ResultCollector:
             logger.warning("Nenhum resultado para gerar CSV")
             return csv_path
 
-        # Coletar todos os campos
+        # Coletar todos os campos (keys) presentes nos resultados
         fieldnames = set()
         for result in self.results:
             fieldnames.update(result.keys())
 
+        # Ordenar colunas para consistência
         fieldnames = sorted(fieldnames)
 
         # Escrever CSV
@@ -164,26 +163,22 @@ class ResultCollector:
         Calcula métricas agregadas.
 
         Returns:
-            Dict com métricas por ferramenta:
-            {
-                'csdiff-web': {
-                    'total_executions': int,
-                    'successful_executions': int,
-                    'avg_conflicts': float,
-                    'avg_time': float,
-                    ...
-                },
-                ...
-            }
+            Dict com métricas por ferramenta
         """
         if not self.results:
             return {}
 
         metrics = {}
 
-        # Para cada ferramenta
-        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
+        # Definir explicitamente as ferramentas que esperamos analisar
+        # Note que usamos underscores aqui porque _flatten_tool_results converteu os hifens
+        tools_to_analyze = ['csdiff_web', 'mergiraf', 'slow_diff3']
+
+        for tool in tools_to_analyze:
+            # Verifica se essa ferramenta existe nos resultados (pode ser que alguma execução tenha falhado geral)
+            # Mas vamos tentar calcular mesmo assim
             tool_metrics = self._calculate_tool_metrics(tool)
+            # Retorna a chave com hifen para o relatório final ficar bonito
             metrics[tool.replace('_', '-')] = tool_metrics
 
         return metrics
@@ -261,7 +256,7 @@ class ResultCollector:
 
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("=" * 60 + "\n")
-            f.write("RESUMO DOS EXPERIMENTOS - CSDiff-Web\n")
+            f.write("RESUMO DOS EXPERIMENTOS\n")
             f.write("=" * 60 + "\n\n")
 
             f.write(f"Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -269,7 +264,7 @@ class ResultCollector:
             f.write(f"Triplas bem-sucedidas: {self.stats['successful_triplets']}\n")
             f.write(f"Triplas falhadas: {self.stats['failed_triplets']}\n\n")
 
-            # Métricas por ferramenta
+            # Métricas por ferramenta (Agora exibe as 3 ferramentas iguais)
             for tool_name, tool_metrics in metrics.items():
                 f.write("=" * 60 + "\n")
                 f.write(f"FERRAMENTA: {tool_name.upper()}\n")
@@ -288,23 +283,6 @@ class ResultCollector:
 
                 f.write(f"Total de erros:          {tool_metrics['total_errors']}\n")
                 f.write(f"Erros unicos:            {tool_metrics['unique_errors']}\n\n")
-
-            # Comparação
-            f.write("=" * 60 + "\n")
-            f.write("COMPARACAO\n")
-            f.write("=" * 60 + "\n")
-
-            if 'csdiff-web' in metrics and 'slow-diff3' in metrics:
-                csdiff_conflicts = metrics['csdiff-web']['total_conflicts']
-                slow_conflicts = metrics['slow-diff3']['total_conflicts']
-
-                reduction = slow_conflicts - csdiff_conflicts
-                reduction_pct = (reduction / slow_conflicts * 100) if slow_conflicts > 0 else 0
-
-                f.write(f"Reducao de conflitos (CSDiff-Web vs slow-diff3):\n")
-                f.write(f"  slow-diff3: {slow_conflicts} conflitos\n")
-                f.write(f"  CSDiff-Web: {csdiff_conflicts} conflitos\n")
-                f.write(f"  Reducao:    {reduction} ({reduction_pct:.1f}%)\n\n")
 
         logger.info(f"Resumo gerado: {summary_path}")
         return summary_path

@@ -1,6 +1,6 @@
 """
 Orquestrador de experimentos.
-Executa CSDiff-Web + diff3 + slow-diff3 em triplas mineradas.
+Executa CSDiff-Web + mergiraf + slow-diff3 em triplas mineradas.
 
 Este é o módulo principal do Runner. Ele:
 1. Carrega triplas do diretório data/triplets/
@@ -66,20 +66,7 @@ class ExperimentRunner:
             max_triplets: Máximo de triplas a carregar (None = todas)
 
         Returns:
-            Lista de triplas:
-            [
-                {
-                    'id': 'triplet_001',
-                    'dir': Path('data/triplets/triplet_001'),
-                    'metadata': {...},
-                    'base': str,
-                    'left': str,
-                    'right': str,
-                    'extension': str,
-                    'filepath': str
-                },
-                ...
-            ]
+            Lista de triplas.
         """
         triplets = []
 
@@ -184,26 +171,16 @@ class ExperimentRunner:
     def _parse_metadata(self, metadata_file: Path) -> Dict:
         """
         Parse arquivo metadata.txt.
-
-        Args:
-            metadata_file: Path do metadata.txt
-
-        Returns:
-            Dict com metadata parseado
         """
         metadata = {}
-
         try:
             lines = metadata_file.read_text(encoding='utf-8').split('\n')
-
             for line in lines:
                 if ':' in line:
                     key, value = line.split(':', 1)
                     metadata[key.strip()] = value.strip()
-
         except Exception as e:
             logger.warning(f"Erro ao parsear metadata: {e}")
-
         return metadata
 
     def run_experiments(
@@ -217,13 +194,7 @@ class ExperimentRunner:
             max_triplets: Máximo de triplas a processar (None = todas)
 
         Returns:
-            Dict com resultados:
-            {
-                'triplets_processed': int,
-                'csv_path': Path,
-                'summary_path': Path,
-                'metrics': {...}
-            }
+            Dict com resultados.
         """
 
         # Carregar triplas
@@ -274,7 +245,7 @@ class ExperimentRunner:
         Args:
             triplet: Dict com dados da tripla
         """
-        # Executar ferramentas
+        # Executar ferramentas (CSDiff, Mergiraf, Slow-diff3)
         tool_results = self.executor.execute_all(
             base=triplet['base'],
             left=triplet['left'],

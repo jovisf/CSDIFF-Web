@@ -1,0 +1,63 @@
+============================================================
+RESUMO DOS EXPERIMENTOS
+============================================================
+
+Data: 2025-12-17 20:25:38
+Total de triplas: 240
+Triplas bem-sucedidas: 240
+Triplas falhadas: 0
+
+============================================================
+FERRAMENTA: CSDIFF-WEB
+============================================================
+Total de execucoes:     240
+Execucoes bem-sucedidas: 240
+Execucoes falhadas:      0
+Taxa de sucesso:         100.0%
+
+Total de conflitos:      597
+Media de conflitos:      2.49
+Min/Max conflitos:       0 / 57
+
+Tempo medio:             0.142s
+Min/Max tempo:           0.040s / 3.117s
+
+Total de erros:          0
+Erros unicos:            0
+
+============================================================
+FERRAMENTA: MERGIRAF
+============================================================
+Total de execucoes:     240
+Execucoes bem-sucedidas: 240
+Execucoes falhadas:      0
+Taxa de sucesso:         100.0%
+
+Total de conflitos:      442
+Media de conflitos:      1.84
+Min/Max conflitos:       0 / 35
+
+Tempo medio:             0.080s
+Min/Max tempo:           0.062s / 0.233s
+
+Total de erros:          0
+Erros unicos:            0
+
+============================================================
+FERRAMENTA: SLOW-DIFF3
+============================================================
+Total de execucoes:     240
+Execucoes bem-sucedidas: 234
+Execucoes falhadas:      6
+Taxa de sucesso:         97.5%
+
+Total de conflitos:      269
+Media de conflitos:      1.15
+Min/Max conflitos:       0 / 33
+
+Tempo medio:             2.377s
+Min/Max tempo:           0.094s / 60.207s
+
+Total de erros:          6
+Erros unicos:            6
+

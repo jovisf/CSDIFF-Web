@@ -1,19 +1,21 @@
 """
-Classificador de resultados por comparação par a par.
-Implementa a metodologia correta usando merge commit como gabarito.
+Classificador de resultados.
+Implementa a metodologia de avaliação de ferramentas de merge.
 
 METODOLOGIA:
 - Gabarito: resultado do merge commit (merged.ts)
-- Comparação: Pares ordenados de ferramentas (F1, F2)
-- Classificação: Falsos Positivos Adicionais e Falsos Negativos Adicionais
+- Análise Individual: Classifica cada ferramenta em relação ao gabarito.
+- Comparação Par a Par: Identifica melhorias relativas (FP/FN Adicionais).
 
-DEFINIÇÕES:
-- Falso Positivo Adicional (F1 sobre F2): F1 reportou conflito, mas F2 integrou
-  corretamente (F2 = resultado do repo)
-- Falso Negativo Adicional (F1 sobre F2): F1 não reportou conflito, mas produziu
-  resultado incorreto (F1 ≠ repo), enquanto F2 reportou conflito
-- Correto: Sem conflito E resultado = repo
-- Indefinido: Ambos com conflito, ou ambos incorretos
+CLASSIFICAÇÃO INDIVIDUAL (Baseada no Diagrama do TCC):
+1. Clean Merge Correct (Sucesso): Ferramenta não reportou conflito E saída igual ao gabarito.
+2. Clean Merge Incorrect (Erro de Merge): Ferramenta não reportou conflito MAS saída diferente do gabarito.
+3. Conflict (Conflito): Ferramenta reportou conflito (correto ou não, depende da semântica, mas geralmente é aceito como "não conseguiu resolver").
+4. Failure (Falha): A ferramenta quebrou/crashou.
+
+DEFINIÇÕES PAR A PAR (Opcional para análise relativa):
+- Falso Positivo Adicional (F1 sobre F2): F1 conflitou, F2 resolveu corretamente.
+- Falso Negativo Adicional (F1 sobre F2): F1 resolveu incorretamente, F2 conflitou.
 """
 
 from typing import Dict, Tuple, Literal
@@ -21,205 +23,160 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-ClassificationType = Literal['fp_adicional', 'fn_adicional', 'correto', 'indefinido']
+# Tipos de classificação individual
+ToolClassification = Literal['clean_correct', 'clean_incorrect', 'conflict', 'failure']
+
+# Tipos de comparação par a par
+PairClassification = Literal['fp_adicional', 'fn_adicional', 'correto', 'indefinido']
 
 
 class ComparisonClassifier:
     """
-    Classificador de resultados usando comparação par a par.
-
-    Usa o merge commit real como gabarito ao invés de uma ferramenta baseline.
+    Classificador de resultados de merge.
     """
 
     def __init__(self):
         """Inicializa classificador."""
-        self.stats = {
+        # Estatísticas para comparações par a par
+        self.pair_stats = {
             'total_comparisons': 0,
             'fp_adicional': 0,
             'fn_adicional': 0,
             'corretos': 0,
             'indefinidos': 0
         }
+        
+        # Estatísticas individuais por ferramenta
+        self.tool_stats = {}
 
-    def classify_result(
+    def classify_tool_result(
+        self,
+        tool_name: str,
+        output: str,
+        has_conflict: bool,
+        repo_expected: str,
+        error: str = None
+    ) -> ToolClassification:
+        """
+        Classifica o resultado de uma ÚNICA ferramenta em relação ao gabarito.
+        Segue o fluxo do diagrama padrão de avaliação.
+
+        Args:
+            tool_name: Nome da ferramenta
+            output: Conteúdo gerado pela ferramenta
+            has_conflict: Se houve conflito
+            repo_expected: Conteúdo do gabarito (merge commit)
+            error: Mensagem de erro se a ferramenta falhou
+
+        Returns:
+            Classificação: 'clean_correct' | 'clean_incorrect' | 'conflict' | 'failure'
+        """
+        # Inicializar stats para a ferramenta se não existir
+        if tool_name not in self.tool_stats:
+            self.tool_stats[tool_name] = {
+                'clean_correct': 0,
+                'clean_incorrect': 0,
+                'conflict': 0,
+                'failure': 0,
+                'total': 0
+            }
+        
+        self.tool_stats[tool_name]['total'] += 1
+
+        # 1. Verificar Falha de Execução
+        if error:
+            self.tool_stats[tool_name]['failure'] += 1
+            return 'failure'
+
+        # 2. Verificar Conflito
+        if has_conflict:
+            # Nota: O diagrama geralmente trata qualquer conflito reportado como "Conflict"
+            # independente se o gabarito tinha conflito ou não (embora o ideal seja comparar).
+            # Para simplificar e seguir a prática comum: se a ferramenta parou, é conflito.
+            self.tool_stats[tool_name]['conflict'] += 1
+            return 'conflict'
+
+        # 3. Verificar Clean Merge (Resolução Automática)
+        # Normalizar strings (remover espaços extras para evitar falsos erros por formatação)
+        output_norm = output.strip()
+        expected_norm = repo_expected.strip() if repo_expected else ""
+
+        if output_norm == expected_norm:
+            self.tool_stats[tool_name]['clean_correct'] += 1
+            return 'clean_correct'
+        else:
+            self.tool_stats[tool_name]['clean_incorrect'] += 1
+            return 'clean_incorrect'
+
+    def classify_pair_result(
         self,
         f1_output: str,
         f2_output: str,
         repo_expected: str,
         f1_has_conflict: bool,
         f2_has_conflict: bool
-    ) -> ClassificationType:
+    ) -> PairClassification:
         """
-        Classifica resultado de F1 em relação a F2 usando repo como gabarito.
-
-        Args:
-            f1_output: Saída da ferramenta 1 (merged text)
-            f2_output: Saída da ferramenta 2 (merged text)
-            repo_expected: Resultado esperado do repositório (GABARITO)
-            f1_has_conflict: Se F1 reportou conflito
-            f2_has_conflict: Se F2 reportou conflito
-
-        Returns:
-            Classificação: 'fp_adicional' | 'fn_adicional' | 'correto' | 'indefinido'
-
-        Examples:
-            >>> classifier = ComparisonClassifier()
-            >>> result = classifier.classify_result(
-            ...     f1_output="code with conflicts",
-            ...     f2_output="merged code",
-            ...     repo_expected="merged code",
-            ...     f1_has_conflict=True,
-            ...     f2_has_conflict=False
-            ... )
-            >>> result
-            'fp_adicional'
+        Classifica resultado de F1 em relação a F2 (lógica relativa).
+        Útil para dizer: "Onde o Mergiraf é melhor que o Slow-diff3?".
         """
-        self.stats['total_comparisons'] += 1
+        self.pair_stats['total_comparisons'] += 1
 
-        # Normalizar strings para comparação (remover espaços em branco)
         f1_normalized = f1_output.strip()
         f2_normalized = f2_output.strip()
         repo_normalized = repo_expected.strip()
 
-        # Verificar se resultados batem com o gabarito
         f1_matches_repo = (f1_normalized == repo_normalized)
         f2_matches_repo = (f2_normalized == repo_normalized)
 
-        # CASO 1: F1 reportou conflito, F2 não reportou conflito
-        if f1_has_conflict and not f2_has_conflict:
-            # Se F2 acertou (F2 = repo), então F1 é um Falso Positivo Adicional
-            if f2_matches_repo:
-                self.stats['fp_adicional'] += 1
-                return 'fp_adicional'
-            else:
-                # F2 também errou, indefinido
-                self.stats['indefinidos'] += 1
-                return 'indefinido'
+        # CASO 1: F1 conflitou, F2 resolveu corretamente -> F1 foi pior (FP Adicional relativo)
+        if f1_has_conflict and (not f2_has_conflict and f2_matches_repo):
+            self.pair_stats['fp_adicional'] += 1
+            return 'fp_adicional'
 
-        # CASO 2: F1 não reportou conflito, F2 reportou conflito
-        if not f1_has_conflict and f2_has_conflict:
-            # Se F1 errou (F1 ≠ repo), então F1 é um Falso Negativo Adicional
-            if not f1_matches_repo:
-                self.stats['fn_adicional'] += 1
-                return 'fn_adicional'
-            else:
-                # F1 acertou, então F2 que é FP
-                self.stats['indefinidos'] += 1
-                return 'indefinido'
+        # CASO 2: F1 resolveu ERRADO, F2 conflitou -> F1 foi perigoso (FN Adicional relativo)
+        if (not f1_has_conflict and not f1_matches_repo) and f2_has_conflict:
+            self.pair_stats['fn_adicional'] += 1
+            return 'fn_adicional'
 
-        # CASO 3: Ambos não reportaram conflito
-        if not f1_has_conflict and not f2_has_conflict:
-            # Se ambos acertaram
-            if f1_matches_repo and f2_matches_repo:
-                self.stats['corretos'] += 1
-                return 'correto'
-            else:
-                # Pelo menos um errou
-                self.stats['indefinidos'] += 1
-                return 'indefinido'
+        # CASO 3: Ambos corretos
+        if (not f1_has_conflict and f1_matches_repo) and (not f2_has_conflict and f2_matches_repo):
+            self.pair_stats['corretos'] += 1
+            return 'correto'
 
-        # CASO 4: Ambos reportaram conflito - indefinido
-        self.stats['indefinidos'] += 1
+        # Outros casos (ambos erraram, ambos conflitaram, etc)
+        self.pair_stats['indefinidos'] += 1
         return 'indefinido'
 
-    def classify_pair(
-        self,
-        f1_name: str,
-        f2_name: str,
-        f1_data: Dict,
-        f2_data: Dict,
-        repo_expected: str
-    ) -> Tuple[ClassificationType, Dict]:
-        """
-        Classifica par de ferramentas com dados completos.
+    def get_tool_statistics(self) -> Dict:
+        """Retorna estatísticas individuais."""
+        return self.tool_stats.copy()
 
-        Args:
-            f1_name: Nome da ferramenta 1 (ex: 'csdiff-web')
-            f2_name: Nome da ferramenta 2 (ex: 'diff3')
-            f1_data: Dict com 'output' e 'has_conflict' da ferramenta 1
-            f2_data: Dict com 'output' e 'has_conflict' da ferramenta 2
-            repo_expected: Resultado esperado do repositório
-
-        Returns:
-            Tupla (classificacao, detalhes)
-
-        Examples:
-            >>> classifier = ComparisonClassifier()
-            >>> classification, details = classifier.classify_pair(
-            ...     'csdiff-web', 'diff3',
-            ...     {'output': 'merged', 'has_conflict': False},
-            ...     {'output': 'conflicts', 'has_conflict': True},
-            ...     'merged'
-            ... )
-            >>> classification
-            'correto'
-        """
-        classification = self.classify_result(
-            f1_output=f1_data['output'],
-            f2_output=f2_data['output'],
-            repo_expected=repo_expected,
-            f1_has_conflict=f1_data['has_conflict'],
-            f2_has_conflict=f2_data['has_conflict']
-        )
-
-        details = {
-            'pair': f"{f1_name} vs {f2_name}",
-            'f1_name': f1_name,
-            'f2_name': f2_name,
-            'f1_has_conflict': f1_data['has_conflict'],
-            'f2_has_conflict': f2_data['has_conflict'],
-            'f1_matches_repo': (f1_data['output'].strip() == repo_expected.strip()),
-            'f2_matches_repo': (f2_data['output'].strip() == repo_expected.strip()),
-            'classification': classification
-        }
-
-        return classification, details
-
-    def get_statistics(self) -> Dict:
-        """
-        Retorna estatísticas acumuladas.
-
-        Returns:
-            Dict com contadores de classificações
-        """
-        return self.stats.copy()
-
-    def print_statistics(self, pair_name: str = ""):
-        """
-        Imprime estatísticas formatadas.
-
-        Args:
-            pair_name: Nome do par (ex: "CSDiff-Web vs diff3")
-        """
+    def print_statistics(self):
+        """Imprime todas as estatísticas."""
         print("\n" + "=" * 60)
-        if pair_name:
-            print(f"ESTATÍSTICAS: {pair_name}")
-        else:
-            print("ESTATÍSTICAS DE CLASSIFICAÇÃO")
+        print("ESTATÍSTICAS DE CLASSIFICAÇÃO (INDIVIDUAL)")
         print("=" * 60)
-        print(f"Total de comparações:      {self.stats['total_comparisons']}")
-        print(f"Falsos Positivos Adicionais: {self.stats['fp_adicional']}")
-        print(f"Falsos Negativos Adicionais: {self.stats['fn_adicional']}")
-        print(f"Corretos:                   {self.stats['corretos']}")
-        print(f"Indefinidos:                {self.stats['indefinidos']}")
-        print("=" * 60)
+        
+        for tool, stats in self.tool_stats.items():
+            total = stats['total']
+            if total == 0: continue
+            
+            print(f"\n[{tool.upper()}] (Total: {total})")
+            print(f"  Clean Correct (Sucesso):   {stats['clean_correct']} ({stats['clean_correct']/total*100:.1f}%)")
+            print(f"  Clean Incorrect (Erro):    {stats['clean_incorrect']} ({stats['clean_incorrect']/total*100:.1f}%)")
+            print(f"  Conflicts (Desistência):   {stats['conflict']} ({stats['conflict']/total*100:.1f}%)")
+            print(f"  Failures (Crash):          {stats['failure']} ({stats['failure']/total*100:.1f}%)")
 
-        # Calcular taxas
-        if self.stats['total_comparisons'] > 0:
-            total = self.stats['total_comparisons']
-            print(f"\nTaxas:")
-            print(f"  FP Adicional: {self.stats['fp_adicional'] / total * 100:.1f}%")
-            print(f"  FN Adicional: {self.stats['fn_adicional'] / total * 100:.1f}%")
-            print(f"  Correto:      {self.stats['corretos'] / total * 100:.1f}%")
-            print(f"  Indefinido:   {self.stats['indefinidos'] / total * 100:.1f}%")
-        print()
+        print("\n" + "=" * 60)
+        print("ESTATÍSTICAS DE COMPARAÇÃO PAR-A-PAR (ACUMULADO)")
+        print("=" * 60)
+        print(f"Total comparado: {self.pair_stats['total_comparisons']}")
+        print(f"FP Adicional:    {self.pair_stats['fp_adicional']}")
+        print(f"FN Adicional:    {self.pair_stats['fn_adicional']}")
+        print("=" * 60 + "\n")
 
     def reset_statistics(self):
-        """Reseta estatísticas."""
-        self.stats = {
-            'total_comparisons': 0,
-            'fp_adicional': 0,
-            'fn_adicional': 0,
-            'corretos': 0,
-            'indefinidos': 0
-        }
+        """Reseta todas as estatísticas."""
+        self.pair_stats = {k: 0 for k in self.pair_stats}
+        self.tool_stats = {}

@@ -2,20 +2,17 @@
 Analisador de métricas estatísticas.
 Calcula análise comparativa usando merge commit como gabarito.
 
-Este módulo implementa análise estatística avançada para validação
-científica do CSDiff-Web conforme metodologia do TCC.
+Este módulo implementa análise estatística para validação
+científica das ferramentas (CSDiff-Web, Mergiraf, Slow-diff3).
 
-METODOLOGIA CORRIGIDA:
-- Gabarito: Merge commit real do repositório (merged.ts)
-- Comparação: Pares ordenados de ferramentas (F1, F2)
-- Classificação: Falsos Positivos Adicionais e Falsos Negativos Adicionais
+METODOLOGIA:
+1. Análise Individual (Gabarito):
+   - Cada ferramenta é comparada diretamente com o merge commit (merged.ts).
+   - Classificação: Sucesso (Clean Correct), Erro (Clean Incorrect), Conflito, Falha.
 
-DEFINIÇÕES:
-- Falso Positivo Adicional (F1 sobre F2): F1 reportou conflito, mas F2
-  integrou corretamente (F2 = resultado do repo)
-- Falso Negativo Adicional (F1 sobre F2): F1 não reportou conflito, mas
-  produziu resultado incorreto (F1 ≠ repo), enquanto F2 reportou conflito
-- Correto: Sem conflito E resultado = repo
+2. Comparação Par a Par (Relativa):
+   - Compara ferramentas duas a duas (F1 vs F2).
+   - Identifica Falsos Positivos/Negativos Adicionais.
 """
 
 import pandas as pd
@@ -31,8 +28,6 @@ logger = logging.getLogger(__name__)
 class MetricsAnalyzer:
     """
     Analisador de métricas estatísticas.
-
-    Calcula FP, FN, precisão, recall, F1-score e comparações.
     """
 
     def __init__(self, csv_path: Path):
@@ -44,7 +39,9 @@ class MetricsAnalyzer:
         """
         self.csv_path = Path(csv_path)
         self.df = None
-        self.metrics = {}
+        
+        # Ferramentas a serem analisadas (nomes das colunas no CSV usam underscore)
+        self.tools = ['csdiff_web', 'mergiraf', 'slow_diff3']
 
         # Carregar CSV
         self._load_csv()
@@ -55,16 +52,17 @@ class MetricsAnalyzer:
             self.df = pd.read_csv(self.csv_path)
             logger.info(f"CSV carregado: {len(self.df)} linhas")
 
-            # Validar colunas necessárias
-            required_cols = [
-                'csdiff_web_has_conflict',
-                'diff3_has_conflict',
-                'slow_diff3_has_conflict',
-                'csdiff_web_num_conflicts',
-                'diff3_num_conflicts',
-                'slow_diff3_num_conflicts',
-                
-            ]
+            # Validar colunas necessárias para as 3 ferramentas
+            required_cols = []
+            for tool in self.tools:
+                required_cols.extend([
+                    f'{tool}_has_conflict',
+                    f'{tool}_num_conflicts',
+                    f'{tool}_output'
+                ])
+            
+            # Adicionar coluna do gabarito
+            required_cols.append('repo_merged_content')
 
             missing = [col for col in required_cols if col not in self.df.columns]
             if missing:
@@ -74,415 +72,174 @@ class MetricsAnalyzer:
             logger.error(f"Erro ao carregar CSV: {e}")
             raise
 
-    def compare_tools_pairwise(
-        self,
-        f1_name: str,
-        f2_name: str
-    ) -> Dict:
+    def analyze_individual_performance(self) -> Dict[str, Dict]:
         """
-        Compara duas ferramentas usando comparação par a par com merge commit como gabarito.
-
-        Args:
-            f1_name: Nome da ferramenta 1 (ex: 'csdiff_web', 'diff3', 'slow_diff3')
-            f2_name: Nome da ferramenta 2 (ex: 'csdiff_web', 'diff3', 'slow_diff3')
+        Calcula a performance individual de cada ferramenta em relação ao gabarito.
+        Baseado no diagrama de avaliação do TCC.
 
         Returns:
-            Dict com métricas:
+            Dict com estatísticas por ferramenta:
             {
-                'pair': str,
-                'f1_fp_adicional': int,  # F1 tem FP adicional sobre F2
-                'f1_fn_adicional': int,  # F1 tem FN adicional sobre F2
-                'f1_correto': int,       # F1 acertou
-                'indefinido': int,       # Casos indefinidos
-                'total': int
+                'csdiff-web': {'clean_correct': 10, 'clean_incorrect': 2, ...},
+                'mergiraf': ...
             }
         """
         classifier = ComparisonClassifier()
-
-        # Colunas necessárias
-        f1_conflict_col = f'{f1_name}_has_conflict'
-        f2_conflict_col = f'{f2_name}_has_conflict'
-        f1_output_col = f'{f1_name}_output'
-        f2_output_col = f'{f2_name}_output'
         repo_col = 'repo_merged_content'
 
-        # Verificar se colunas existem
-        required = [f1_conflict_col, f2_conflict_col, f1_output_col, f2_output_col, repo_col]
-        missing = [col for col in required if col not in self.df.columns]
-        if missing:
-            logger.error(f"Colunas faltando para comparação: {missing}")
-            return {
-                'pair': f"{f1_name} vs {f2_name}",
-                'error': f"Colunas faltando: {missing}"
-            }
+        # Iterar sobre cada ferramenta
+        for tool in self.tools:
+            output_col = f'{tool}_output'
+            conflict_col = f'{tool}_has_conflict'
+            error_col = f'{tool}_error'
 
-        # Filtrar linhas válidas
-        valid_mask = (
-            self.df[f1_conflict_col].notna() &
-            self.df[f2_conflict_col].notna() &
-            self.df[f1_output_col].notna() &
-            self.df[f2_output_col].notna() &
-            self.df[repo_col].notna()
-        )
+            if output_col not in self.df.columns:
+                continue
 
-        # Classificar cada linha
-        for idx in self.df[valid_mask].index:
-            row = self.df.loc[idx]
+            # Iterar sobre as linhas do dataframe
+            for idx, row in self.df.iterrows():
+                # Tratar valores NaN/None
+                output = str(row[output_col]) if pd.notna(row[output_col]) else ""
+                has_conflict = bool(row[conflict_col]) if pd.notna(row[conflict_col]) else False
+                repo_content = str(row[repo_col]) if pd.notna(row[repo_col]) else ""
+                
+                # Verificar erro de execução
+                error_msg = str(row[error_col]) if error_col in self.df.columns and pd.notna(row[error_col]) else None
+                if row.get(f'{tool}_success') is False:
+                    error_msg = error_msg or "Execution Failed"
 
-            f1_data = {
-                'output': str(row[f1_output_col]),
-                'has_conflict': bool(row[f1_conflict_col])
-            }
-            f2_data = {
-                'output': str(row[f2_output_col]),
-                'has_conflict': bool(row[f2_conflict_col])
-            }
-            repo_expected = str(row[repo_col])
+                # Classificar usando o classificador centralizado
+                classifier.classify_tool_result(
+                    tool_name=tool.replace('_', '-'), # Usar hifen para display
+                    output=output,
+                    has_conflict=has_conflict,
+                    repo_expected=repo_content,
+                    error=error_msg
+                )
 
-            classifier.classify_pair(f1_name, f2_name, f1_data, f2_data, repo_expected)
+        return classifier.get_tool_statistics()
 
-        # Retornar estatísticas
-        stats = classifier.get_statistics()
-        return {
-            'pair': f"{f1_name} vs {f2_name}",
-            'f1_name': f1_name,
-            'f2_name': f2_name,
-            'f1_fp_adicional': stats['fp_adicional'],
-            'f1_fn_adicional': stats['fn_adicional'],
-            'f1_correto': stats['corretos'],
-            'indefinido': stats['indefinidos'],
-            'total': stats['total_comparisons']
-        }
-
-    def compare_all_pairs(self, tools: List[str] = None) -> Dict[str, Dict]:
+    def compare_all_pairs(self) -> Dict[str, Dict]:
         """
-        Compara todos os pares ordenados de ferramentas.
-
-        Args:
-            tools: Lista de ferramentas a comparar (padrão: ['csdiff_web', 'diff3', 'slow_diff3'])
-
-        Returns:
-            Dict com resultados de todas as comparações:
-            {
-                'csdiff_web_vs_diff3': {...},
-                'csdiff_web_vs_slow_diff3': {...},
-                ...
-            }
+        Compara todos os pares ordenados de ferramentas (Análise Relativa).
         """
-        if tools is None:
-            tools = ['csdiff_web', 'diff3', 'slow_diff3']
-
         results = {}
+        classifier = ComparisonClassifier()
+        repo_col = 'repo_merged_content'
 
         # Gerar todos os pares ordenados (F1, F2) onde F1 != F2
-        for f1 in tools:
-            for f2 in tools:
-                if f1 != f2:
-                    pair_key = f"{f1}_vs_{f2}"
-                    logger.info(f"Comparando par: {pair_key}")
-                    results[pair_key] = self.compare_tools_pairwise(f1, f2)
+        for f1 in self.tools:
+            for f2 in self.tools:
+                if f1 == f2: continue
 
-        return results
+                pair_key = f"{f1.replace('_', '-')}_vs_{f2.replace('_', '-')}"
+                
+                # Colunas
+                f1_out = f'{f1}_output'
+                f2_out = f'{f2}_output'
+                f1_conf = f'{f1}_has_conflict'
+                f2_conf = f'{f2}_has_conflict'
 
-    def calculate_fp_fn(
-        self,
-        tool_col: str,
-        baseline_col: str = 'slow_diff3_has_conflict'
-    ) -> Dict:
-        """
-        Calcula False Positives e False Negatives.
-
-        Usa slow_diff3 como baseline (ground truth).
-
-        Args:
-            tool_col: Coluna da ferramenta a analisar (ex: 'csdiff_web_has_conflict')
-            baseline_col: Coluna do baseline (padrão: 'slow_diff3_has_conflict')
-
-        Returns:
-            Dict com métricas:
-            {
-                'TP': int,  # True Positives
-                'FP': int,  # False Positives
-                'TN': int,  # True Negatives
-                'FN': int,  # False Negatives
-                'precision': float,
-                'recall': float,
-                'f1_score': float,
-                'accuracy': float
-            }
-        """
-        # Filtrar linhas válidas (sem NaN)
-        valid_mask = (
-            self.df[tool_col].notna() &
-            self.df[baseline_col].notna()
-        )
-        tool_values = self.df[valid_mask][tool_col]
-        baseline_values = self.df[valid_mask][baseline_col]
-
-        # Calcular TP, FP, TN, FN
-        TP = ((tool_values == True) & (baseline_values == True)).sum()
-        FP = ((tool_values == True) & (baseline_values == False)).sum()
-        TN = ((tool_values == False) & (baseline_values == False)).sum()
-        FN = ((tool_values == False) & (baseline_values == True)).sum()
-
-        # Calcular métricas derivadas
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        accuracy = (TP + TN) / (TP + FP + TN + FN) if (TP + FP + TN + FN) > 0 else 0.0
-
-        return {
-            'TP': int(TP),
-            'FP': int(FP),
-            'TN': int(TN),
-            'FN': int(FN),
-            'precision': float(precision),
-            'recall': float(recall),
-            'f1_score': float(f1_score),
-            'accuracy': float(accuracy),
-            'total_samples': int(TP + FP + TN + FN)
-        }
-
-    def compare_conflict_rates(self) -> Dict:
-        """
-        Compara taxas de conflito entre ferramentas.
-
-        Returns:
-            Dict com comparações:
-            {
-                'csdiff-web': {'total': int, 'with_conflict': int, 'rate': float},
-                'slow-diff3': {...},
-                'reduction': {'absolute': int, 'relative': float}
-            }
-        """
-        results = {}
-
-        # Para cada ferramenta
-        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
-            conflict_col = f'{tool}_has_conflict'
-
-            if conflict_col not in self.df.columns:
-                continue
-
-            # Filtrar valores válidos
-            valid = self.df[conflict_col].notna()
-            total = valid.sum()
-            with_conflict = (self.df[conflict_col] == True).sum()
-            rate = (with_conflict / total * 100) if total > 0 else 0.0
-
-            tool_name = tool.replace('_', '-')
-            results[tool_name] = {
-                'total': int(total),
-                'with_conflict': int(with_conflict),
-                'without_conflict': int(total - with_conflict),
-                'conflict_rate': float(rate)
-            }
-
-        # Calcular redução (CSDiff-Web vs slow-diff3)
-        if 'csdiff-web' in results and 'slow-diff3' in results:
-            csdiff_conflicts = results['csdiff-web']['with_conflict']
-            slow_conflicts = results['slow-diff3']['with_conflict']
-
-            absolute_reduction = slow_conflicts - csdiff_conflicts
-            relative_reduction = (absolute_reduction / slow_conflicts * 100) if slow_conflicts > 0 else 0.0
-
-            results['reduction'] = {
-                'absolute': int(absolute_reduction),
-                'relative': float(relative_reduction)
-            }
-
-        return results
-
-    def analyze_conflict_distribution(self) -> Dict:
-        """
-        Analisa distribuição de conflitos (0, 1, 2, 3+).
-
-        Returns:
-            Dict com distribuições por ferramenta
-        """
-        results = {}
-
-        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
-            num_col = f'{tool}_num_conflicts'
-
-            if num_col not in self.df.columns:
-                continue
-
-            # Contar conflitos
-            conflict_counts = self.df[num_col].value_counts().sort_index()
-
-            # Agrupar 3+
-            distribution = {}
-            for num_conflicts in conflict_counts.index:
-                if pd.isna(num_conflicts):
+                if f1_out not in self.df.columns or f2_out not in self.df.columns:
                     continue
 
-                num_conflicts = int(num_conflicts)
-                if num_conflicts >= 3:
-                    distribution['3+'] = distribution.get('3+', 0) + conflict_counts[num_conflicts]
-                else:
-                    distribution[str(num_conflicts)] = int(conflict_counts[num_conflicts])
+                # Resetar stats do classificador para este par
+                classifier.reset_statistics()
 
-            tool_name = tool.replace('_', '-')
-            results[tool_name] = distribution
+                for idx, row in self.df.iterrows():
+                    classifier.classify_pair_result(
+                        f1_output=str(row[f1_out]) if pd.notna(row[f1_out]) else "",
+                        f2_output=str(row[f2_out]) if pd.notna(row[f2_out]) else "",
+                        repo_expected=str(row[repo_col]) if pd.notna(row[repo_col]) else "",
+                        f1_has_conflict=bool(row[f1_conf]),
+                        f2_has_conflict=bool(row[f2_conf])
+                    )
+                
+                # Salvar estatísticas do par (usando a propriedade interna do classificador que foi populada)
+                pair_stats = classifier.pair_stats.copy()
+                results[pair_key] = pair_stats
 
         return results
 
     def analyze_execution_time(self) -> Dict:
-        """
-        Analisa tempo de execução.
-
-        Returns:
-            Dict com estatísticas de tempo por ferramenta
-        """
+        """Analisa tempo de execução."""
         results = {}
-
-        for tool in ['csdiff_web', 'diff3', 'slow_diff3']:
+        for tool in self.tools:
             time_col = f'{tool}_time'
-
-            if time_col not in self.df.columns:
-                continue
-
-            # Filtrar valores válidos
-            times = self.df[time_col].dropna()
-
-            if len(times) == 0:
-                continue
-
-            tool_name = tool.replace('_', '-')
-            results[tool_name] = {
-                'mean': float(times.mean()),
-                'median': float(times.median()),
-                'std': float(times.std()),
-                'min': float(times.min()),
-                'max': float(times.max()),
-                'total': float(times.sum())
-            }
-
+            if time_col in self.df.columns:
+                times = self.df[time_col].dropna()
+                if len(times) > 0:
+                    tool_name = tool.replace('_', '-')
+                    results[tool_name] = {
+                        'mean': float(times.mean()),
+                        'min': float(times.min()),
+                        'max': float(times.max())
+                    }
         return results
 
     def generate_summary_report(self) -> Dict:
-        """
-        Gera relatório resumido com todas as métricas.
-
-        Returns:
-            Dict consolidado com todas as análises
-        """
-        # NOVA METODOLOGIA: Comparações par a par usando merge commit como gabarito
-        pairwise_comparisons = {}
-        if 'repo_merged_content' in self.df.columns:
-            logger.info("Executando comparações par a par com gabarito do repo...")
-            pairwise_comparisons = self.compare_all_pairs()
-        else:
-            logger.warning("Coluna 'repo_merged_content' não encontrada - pulando comparações par a par")
-
-        # Calcular FP/FN para CSDiff-Web (LEGADO - manter para compatibilidade)
-        fp_fn_metrics = {}
-        if 'csdiff_web_has_conflict' in self.df.columns and 'slow_diff3_has_conflict' in self.df.columns:
-            fp_fn_metrics['csdiff-web'] = self.calculate_fp_fn('csdiff_web_has_conflict', baseline_col='slow_diff3_has_conflict')
-
-        # Outras métricas
-        conflict_comparison = self.compare_conflict_rates()
-        conflict_distribution = self.analyze_conflict_distribution()
-        execution_time = self.analyze_execution_time()
-
+        """Gera relatório consolidado."""
         return {
-            'pairwise_comparisons': pairwise_comparisons,  # NOVA METODOLOGIA
-            'fp_fn_analysis': fp_fn_metrics,  # LEGADO
-            'conflict_comparison': conflict_comparison,
-            'conflict_distribution': conflict_distribution,
-            'execution_time': execution_time,
             'dataset_info': {
                 'total_triplets': len(self.df),
-                'tools_compared': list(conflict_comparison.keys())
-            }
+                'tools': [t.replace('_', '-') for t in self.tools]
+            },
+            'individual_performance': self.analyze_individual_performance(),
+            'pairwise_comparisons': self.compare_all_pairs(),
+            'execution_time': self.analyze_execution_time()
         }
 
     def print_summary(self):
-        """Imprime resumo formatado."""
+        """Imprime resumo formatado no terminal."""
         summary = self.generate_summary_report()
+        total = summary['dataset_info']['total_triplets']
 
-        print("\n" + "=" * 60)
-        print("ANÁLISE ESTATÍSTICA - CSDiff-Web")
-        print("=" * 60)
-        print(f"Total de triplas: {summary['dataset_info']['total_triplets']}")
-        print()
+        print("\n" + "=" * 80)
+        print(f"RELATÓRIO DE EXPERIMENTOS (Total de Triplas: {total})")
+        print("=" * 80)
 
-        # NOVA METODOLOGIA: Comparações par a par
-        if summary['pairwise_comparisons']:
-            print("=" * 60)
-            print("COMPARAÇÕES PAR A PAR (Gabarito: Merge Commit Real)")
-            print("=" * 60)
+        # 1. Tabela de Performance Individual (O que foi pedido: Comparação com Gabarito)
+        print("\n1. PERFORMANCE INDIVIDUAL (Ferramenta vs Gabarito)")
+        print("-" * 80)
+        # Cabeçalho da tabela
+        header = f"{'FERRAMENTA':<15} | {'SUCESSO (Correto)':<18} | {'ERRO (Incorreto)':<18} | {'CONFLITO':<10} | {'FALHA':<8}"
+        print(header)
+        print("-" * 80)
 
-            for pair_key, metrics in summary['pairwise_comparisons'].items():
-                if 'error' in metrics:
-                    print(f"\n{metrics['pair']}: {metrics['error']}")
-                    continue
+        for tool, stats in summary['individual_performance'].items():
+            # Calcular porcentagens
+            t_total = stats['total'] if stats['total'] > 0 else 1
+            suc_pct = (stats['clean_correct'] / t_total) * 100
+            err_pct = (stats['clean_incorrect'] / t_total) * 100
+            conf_pct = (stats['conflict'] / t_total) * 100
+            fail_pct = (stats['failure'] / t_total) * 100
 
-                print(f"\n{metrics['pair'].upper()}:")
-                print(f"  Total de comparações:        {metrics['total']}")
-                print(f"  FP Adicionais de {metrics['f1_name']}: {metrics['f1_fp_adicional']}")
-                print(f"  FN Adicionais de {metrics['f1_name']}: {metrics['f1_fn_adicional']}")
-                print(f"  {metrics['f1_name']} Correto:         {metrics['f1_correto']}")
-                print(f"  Indefinidos:                 {metrics['indefinido']}")
+            print(f"{tool.upper():<15} | "
+                  f"{stats['clean_correct']:>4} ({suc_pct:>5.1f}%)    | "
+                  f"{stats['clean_incorrect']:>4} ({err_pct:>5.1f}%)    | "
+                  f"{stats['conflict']:>4} ({conf_pct:>4.1f}%) | "
+                  f"{stats['failure']:>4}")
+        print("-" * 80)
+        print("* Sucesso: Merge automático idêntico ao gabarito.")
+        print("* Erro: Merge automático diferente do gabarito (Silent Mismerge).")
+        print("* Conflito: Ferramenta desistiu e reportou conflito.")
 
-                # Calcular taxas
-                if metrics['total'] > 0:
-                    fp_rate = metrics['f1_fp_adicional'] / metrics['total'] * 100
-                    fn_rate = metrics['f1_fn_adicional'] / metrics['total'] * 100
-                    correct_rate = metrics['f1_correto'] / metrics['total'] * 100
-                    print(f"\n  Taxa FP Adicional: {fp_rate:.1f}%")
-                    print(f"  Taxa FN Adicional: {fn_rate:.1f}%")
-                    print(f"  Taxa Correto:      {correct_rate:.1f}%")
+        # 2. Comparações Par a Par
+        print("\n\n2. COMPARAÇÕES PAR A PAR (Melhoria Relativa)")
+        print("-" * 80)
+        for pair, metrics in summary['pairwise_comparisons'].items():
+            if metrics['total_comparisons'] == 0: continue
+            
+            f1, f2 = pair.split('_vs_')
+            print(f"\n[{f1.upper()} vs {f2.upper()}]")
+            print(f"  FP Adicional ({f1} conflitou, {f2} acertou): {metrics['fp_adicional']}")
+            print(f"  FN Adicional ({f1} errou, {f2} conflitou):   {metrics['fn_adicional']}")
+            print(f"  Ambos Corretos:                              {metrics['corretos']}")
 
-        # FP/FN (LEGADO - manter para comparação)
-        if summary['fp_fn_analysis']:
-            print("\n" + "=" * 60)
-            print("FALSE POSITIVES / FALSE NEGATIVES (LEGADO - baseline: slow-diff3)")
-            print("=" * 60)
-
-            for tool, metrics in summary['fp_fn_analysis'].items():
-                print(f"\n{tool.upper()} (baseline: slow-diff3):")
-                print(f"  True Positives:  {metrics['TP']}")
-                print(f"  False Positives: {metrics['FP']}")
-                print(f"  True Negatives:  {metrics['TN']}")
-                print(f"  False Negatives: {metrics['FN']}")
-                print(f"\n  Precision: {metrics['precision']:.3f}")
-                print(f"  Recall:    {metrics['recall']:.3f}")
-                print(f"  F1-Score:  {metrics['f1_score']:.3f}")
-                print(f"  Accuracy:  {metrics['accuracy']:.3f}")
-
-        # Comparação de conflitos
-        if summary['conflict_comparison']:
-            print("\n" + "=" * 60)
-            print("COMPARAÇÃO DE CONFLITOS")
-            print("=" * 60)
-
-            for tool, data in summary['conflict_comparison'].items():
-                if tool == 'reduction':
-                    continue
-
-                print(f"\n{tool.upper()}:")
-                print(f"  Total de triplas:     {data['total']}")
-                print(f"  Com conflito:         {data['with_conflict']} ({data['conflict_rate']:.1f}%)")
-                print(f"  Sem conflito:         {data['without_conflict']}")
-
-            if 'reduction' in summary['conflict_comparison']:
-                red = summary['conflict_comparison']['reduction']
-                print(f"\nREDUÇÃO (CSDiff-Web vs slow-diff3):")
-                print(f"  Absoluta: {red['absolute']} conflitos")
-                print(f"  Relativa: {red['relative']:.1f}%")
-
-        # Tempo de execução
-        if summary['execution_time']:
-            print("\n" + "=" * 60)
-            print("TEMPO DE EXECUÇÃO")
-            print("=" * 60)
-
-            for tool, data in summary['execution_time'].items():
-                print(f"\n{tool.upper()}:")
-                print(f"  Média:   {data['mean']:.4f}s")
-                print(f"  Mediana: {data['median']:.4f}s")
-                print(f"  Min/Max: {data['min']:.4f}s / {data['max']:.4f}s")
-
-        print("\n" + "=" * 60 + "\n")
+        # 3. Tempo de Execução
+        print("\n\n3. TEMPO MÉDIO DE EXECUÇÃO (s)")
+        print("-" * 80)
+        for tool, times in summary['execution_time'].items():
+            print(f"{tool.upper():<15}: {times['mean']:.4f}s")
+        
+        print("=" * 80 + "\n")
