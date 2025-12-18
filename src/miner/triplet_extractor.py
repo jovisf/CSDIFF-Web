@@ -166,6 +166,7 @@ class TripletExtractor:
                 'base_content': str,
                 'left_content': str,
                 'right_content': str,
+                'merged_content': str, 
                 'commit_sha': str
             }
 
@@ -205,19 +206,21 @@ class TripletExtractor:
                 logger.debug(f"Ignorando {filepath}: extensão não suportada")
                 continue
 
-            # Extrair conteúdo das três versões
+            # Extrair conteúdo das quatro versões (base, left, right, merged)
             base_content = self.extract_file_content(base, filepath)
             left_content = self.extract_file_content(left, filepath)
             right_content = self.extract_file_content(right, filepath)
+            merged_content = self.extract_file_content(commit, filepath)  # GABARITO
 
-            # Filtro 2: Arquivo deve existir em todas as versões
-            if base_content is None or left_content is None or right_content is None:
+            # Filtro 2: Arquivo deve existir em todas as versões (incluindo merge result)
+            if base_content is None or left_content is None or right_content is None or merged_content is None:
                 self.stats['file_not_in_all_versions'] += 1
                 logger.debug(
                     f"Ignorando {filepath}: não existe em todas as versões "
                     f"(base={base_content is not None}, "
                     f"left={left_content is not None}, "
-                    f"right={right_content is not None})"
+                    f"right={right_content is not None}, "
+                    f"merged={merged_content is not None})"
                 )
                 continue
 
@@ -229,6 +232,7 @@ class TripletExtractor:
                 'base_content': base_content,
                 'left_content': left_content,
                 'right_content': right_content,
+                'merged_content': merged_content,  # GABARITO (resultado real do merge)
                 'commit_sha': commit.hexsha,
                 'base_sha': base.hexsha,
                 'left_sha': left.hexsha,
@@ -240,7 +244,7 @@ class TripletExtractor:
 
             logger.info(
                 f"✓ Tripla extraída: {filepath} "
-                f"({len(base_content)} / {len(left_content)} / {len(right_content)} bytes)"
+                f"({len(base_content)} / {len(left_content)} / {len(right_content)} / {len(merged_content)} bytes)"
             )
 
         return triplets
@@ -259,6 +263,7 @@ class TripletExtractor:
             base.ts
             left.ts
             right.ts
+            merged.ts      # ⭐ GABARITO (resultado real do merge)
             metadata.txt
 
         Args:
@@ -281,7 +286,7 @@ class TripletExtractor:
         # Nome base do arquivo (preservar extensão)
         extension = triplet['extension']
 
-        # Salvar três versões
+        # Salvar quatro versões (base, left, right, merged)
         (triplet_dir / f"base{extension}").write_text(
             triplet['base_content'], encoding='utf-8'
         )
@@ -290,6 +295,9 @@ class TripletExtractor:
         )
         (triplet_dir / f"right{extension}").write_text(
             triplet['right_content'], encoding='utf-8'
+        )
+        (triplet_dir / f"merged{extension}").write_text(
+            triplet['merged_content'], encoding='utf-8'
         )
 
         # Salvar metadados
@@ -302,9 +310,10 @@ Left SHA: {triplet['left_sha']}
 Right SHA: {triplet['right_sha']}
 
 File Sizes:
-  Base: {len(triplet['base_content'])} bytes
-  Left: {len(triplet['left_content'])} bytes
-  Right: {len(triplet['right_content'])} bytes
+  Base:   {len(triplet['base_content'])} bytes
+  Left:   {len(triplet['left_content'])} bytes
+  Right:  {len(triplet['right_content'])} bytes
+  Merged: {len(triplet['merged_content'])} bytes (GABARITO)
 """
         (triplet_dir / "metadata.txt").write_text(metadata, encoding='utf-8')
 

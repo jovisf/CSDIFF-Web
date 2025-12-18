@@ -1,348 +1,930 @@
-import React from 'react';
-import PropTypes from 'prop-types';
-import classNames from 'classnames';
-import { componentPropType, chainPropTypes } from '@material-ui/utils';
-import withStyles from '../styles/withStyles';
-import { capitalize } from '../utils/helpers';
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-export const styles = theme => ({
-  /* Styles applied to the root element. */
-  root: {
-    display: 'block',
-    margin: 0,
-  },
-  /* Styles applied to the root element if `variant="display4"`. */
-  display4: theme.typography.display4,
-  /* Styles applied to the root element if `variant="display3"`. */
-  display3: theme.typography.display3,
-  /* Styles applied to the root element if `variant="display2"`. */
-  display2: theme.typography.display2,
-  /* Styles applied to the root element if `variant="display1"`. */
-  display1: theme.typography.display1,
-  /* Styles applied to the root element if `variant="headline"`. */
-  headline: theme.typography.headline,
-  /* Styles applied to the root element if `variant="title"`. */
-  title: theme.typography.title,
-  /* Styles applied to the root element if `variant="subheading"`. */
-  subheading: theme.typography.subheading,
-  /* Styles applied to the root element if `variant="body2"`. */
-  body2: theme.typography.body2,
-  /* Styles applied to the root element if `variant="body1"`. */
-  body1: theme.typography.body1,
-  /* Styles applied to the root element if `variant="caption"`. */
-  caption: theme.typography.caption,
-  /* Styles applied to the root element if `variant="button"`. */
-  button: theme.typography.button,
-  /* Styles applied to the root element if `variant="h1"`. */
-  h1: theme.typography.h1,
-  /* Styles applied to the root element if `variant="h2"`. */
-  h2: theme.typography.h2,
-  /* Styles applied to the root element if `variant="h3"`. */
-  h3: theme.typography.h3,
-  /* Styles applied to the root element if `variant="h4"`. */
-  h4: theme.typography.h4,
-  /* Styles applied to the root element if `variant="h5"`. */
-  h5: theme.typography.h5,
-  /* Styles applied to the root element if `variant="h6"`. */
-  h6: theme.typography.h6,
-  /* Styles applied to the root element if `variant="subtitle1"`. */
-  subtitle1: theme.typography.subtitle1,
-  /* Styles applied to the root element if `variant="subtitle2"`. */
-  subtitle2: theme.typography.subtitle2,
-  /* Styles applied to the root element if `variant="overline"`. */
-  overline: theme.typography.overline,
-  /* Styles applied to the root element if `variant="srOnly"`. Only accessible to screen readers. */
-  srOnly: {
-    position: 'absolute',
-    height: 1,
-    width: 1,
-    overflow: 'hidden',
-  },
-  /* Styles applied to the root element if `align="left"`. */
-  alignLeft: {
-    textAlign: 'left',
-  },
-  /* Styles applied to the root element if `align="center"`. */
-  alignCenter: {
-    textAlign: 'center',
-  },
-  /* Styles applied to the root element if `align="right"`. */
-  alignRight: {
-    textAlign: 'right',
-  },
-  /* Styles applied to the root element if `align="justify"`. */
-  alignJustify: {
-    textAlign: 'justify',
-  },
-  /* Styles applied to the root element if `align="nowrap"`. */
-  noWrap: {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  /* Styles applied to the root element if `gutterBottom={true}`. */
-  gutterBottom: {
-    marginBottom: '0.35em',
-  },
-  /* Styles applied to the root element if `paragraph={true}`. */
-  paragraph: {
-    marginBottom: 16,
-  },
-  /* Styles applied to the root element if `color="inherit"`. */
-  colorInherit: {
-    color: 'inherit',
-  },
-  /* Styles applied to the root element if `color="primary"`. */
-  colorPrimary: {
-    color: theme.palette.primary.main,
-  },
-  /* Styles applied to the root element if `color="secondary"`. */
-  colorSecondary: {
-    color: theme.palette.secondary.main,
-  },
-  /* Styles applied to the root element if `color="textPrimary"`. */
-  colorTextPrimary: {
-    color: theme.palette.text.primary,
-  },
-  /* Styles applied to the root element if `color="textSecondary"`. */
-  colorTextSecondary: {
-    color: theme.palette.text.secondary,
-  },
-  /* Styles applied to the root element if `color="error"`. */
-  colorError: {
-    color: theme.palette.error.main,
-  },
-  /* Styles applied to the root element if `inline={true}`. */
-  inline: {
-    display: 'inline',
-  },
-});
+// Hello, and welcome to hacking node.js!
+//
+// This file is invoked by node::Load in src/node.cc, and responsible for
+// bootstrapping the node.js core. Special caution is given to the performance
+// of the startup process, so many dependencies are invoked lazily.
+(function(process) {
+  this.global = this;
 
-const nextVariants = {
-  display4: 'h1',
-  display3: 'h2',
-  display2: 'h3',
-  display1: 'h4',
-  headline: 'h5',
-  title: 'h6',
-  subheading: 'subtitle1',
-};
+  function startup() {
+    var EventEmitter = NativeModule.require('events').EventEmitter;
 
-function getVariant(theme, variantProp) {
-  const typography = theme.typography;
-  let variant = variantProp;
+    process.__proto__ = Object.create(EventEmitter.prototype, {
+      constructor: {
+        value: process.constructor
+      }
+    });
+    EventEmitter.call(process);
 
-  if (!variant) {
-    variant = typography.useNextVariants ? 'body2' : 'body1';
-  }
+    process.EventEmitter = EventEmitter; // process.EventEmitter is deprecated
 
-  // complete v2 switch
-  if (typography.useNextVariants) {
-    variant = nextVariants[variant] || variant;
-  }
+    // do this good and early, since it handles errors.
+    startup.processFatal();
 
-  return variant;
-}
+    startup.globalVariables();
+    startup.globalTimeouts();
+    startup.globalConsole();
 
-const defaultHeadlineMapping = {
-  h1: 'h1',
-  h2: 'h2',
-  h3: 'h3',
-  h4: 'h4',
-  h5: 'h5',
-  h6: 'h6',
-  subtitle1: 'h6',
-  subtitle2: 'h6',
-  body1: 'p',
-  body2: 'p',
-  // deprecated
-  display4: 'h1',
-  display3: 'h1',
-  display2: 'h1',
-  display1: 'h1',
-  headline: 'h1',
-  title: 'h2',
-  subheading: 'h3',
-};
+    startup.processAssert();
+    startup.processConfig();
+    startup.processNextTick();
+    startup.processStdio();
+    startup.processKillAndExit();
+    startup.processSignalHandlers();
 
-function Typography(props) {
-  const {
-    align,
-    classes,
-    className: classNameProp,
-    color,
-    component: componentProp,
-    gutterBottom,
-    headlineMapping,
-    inline,
-    internalDeprecatedVariant,
-    noWrap,
-    paragraph,
-    theme,
-    variant: variantProp,
-    ...other
-  } = props;
+    startup.processChannel();
 
-  const variant = getVariant(theme, variantProp);
-  const className = classNames(
-    classes.root,
-    {
-      [classes[variant]]: variant !== 'inherit',
-      [classes[`color${capitalize(color)}`]]: color !== 'default',
-      [classes.noWrap]: noWrap,
-      [classes.gutterBottom]: gutterBottom,
-      [classes.paragraph]: paragraph,
-      [classes[`align${capitalize(align)}`]]: align !== 'inherit',
-      [classes.inline]: inline,
-    },
-    classNameProp,
-  );
+    startup.resolveArgv0();
 
-  const Component =
-    componentProp ||
-    (paragraph ? 'p' : headlineMapping[variant] || defaultHeadlineMapping[variant]) ||
-    'span';
+    // There are various modes that Node can run in. The most common two
+    // are running from a script and running the REPL - but there are a few
+    // others like the debugger or running --eval arguments. Here we decide
+    // which mode we run in.
 
-  return <Component className={className} {...other} />;
-}
+    if (NativeModule.exists('_third_party_main')) {
+      // To allow people to extend Node in different ways, this hook allows
+      // one to drop a file lib/_third_party_main.js into the build
+      // directory which will be executed instead of Node's normal loading.
+      process.nextTick(function() {
+        NativeModule.require('_third_party_main');
+      });
 
-Typography.propTypes = {
-  /**
-   * Set the text-align on the component.
-   */
-  align: PropTypes.oneOf(['inherit', 'left', 'center', 'right', 'justify']),
-  /**
-   * The content of the component.
-   */
-  children: PropTypes.node,
-  /**
-   * Override or extend the styles applied to the component.
-   * See [CSS API](#css-api) below for more details.
-   */
-  classes: PropTypes.object.isRequired,
-  /**
-   * @ignore
-   */
-  className: PropTypes.string,
-  /**
-   * The color of the component. It supports those theme colors that make sense for this component.
-   */
-  color: PropTypes.oneOf([
-    'default',
-    'error',
-    'inherit',
-    'primary',
-    'secondary',
-    'textPrimary',
-    'textSecondary',
-  ]),
-  /**
-   * The component used for the root node.
-   * Either a string to use a DOM element or a component.
-   * By default, it maps the variant to a good default headline component.
-   */
-  component: componentPropType,
-  /**
-   * If `true`, the text will have a bottom margin.
-   */
-  gutterBottom: PropTypes.bool,
-  /**
-   * We are empirically mapping the variant property to a range of different DOM element types.
-   * For instance, subtitle1 to `<h6>`.
-   * If you wish to change that mapping, you can provide your own.
-   * Alternatively, you can use the `component` property.
-   * The default mapping is the following:
-   */
-  headlineMapping: PropTypes.object,
-  /**
-   *  Controls whether the Typography is inline or not.
-   */
-  inline: PropTypes.bool,
-  /**
-   * A deprecated variant is used from an internal component. Users don't need
-   * a deprecation warning here if they switched to the v2 theme. They already
-   * get the mapping that will be applied in the next major release.
-   *
-   * @internal
-   */
-  internalDeprecatedVariant: PropTypes.bool,
-  /**
-   * If `true`, the text will not wrap, but instead will truncate with an ellipsis.
-   */
-  noWrap: PropTypes.bool,
-  /**
-   * If `true`, the text will have a bottom margin.
-   */
-  paragraph: PropTypes.bool,
-  /**
-   * @ignore
-   */
-  theme: PropTypes.object.isRequired,
-  /**
-   * Applies the theme typography styles.
-   * Use `body1` as the default value with the legacy implementation and `body2` with the new one.
-   */
-  variant: chainPropTypes(
-    PropTypes.oneOf([
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'h5',
-      'h6',
-      'subtitle1',
-      'subtitle2',
-      'body1',
-      'body2',
-      'caption',
-      'button',
-      'overline',
-      'srOnly',
-      'inherit',
-      // deprecated
-      'display4',
-      'display3',
-      'display2',
-      'display1',
-      'headline',
-      'title',
-      'subheading',
-    ]),
-    props => {
-      const deprecatedVariants = [
-        'display4',
-        'display3',
-        'display2',
-        'display1',
-        'headline',
-        'title',
-        'subheading',
-      ];
-      if (
-        props.theme.typography.useNextVariants &&
-        !props.internalDeprecatedVariant &&
-        deprecatedVariants.indexOf(props.variant) !== -1
-      ) {
-        return new Error(
-          'Material-UI: you are using a deprecated typography variant: ' +
-            `\`${props.variant}\` that will be removed in the next major release.\n` +
-            'Please read the migration guide under https://material-ui.com/style/typography#migration-to-typography-v2.',
-        );
+    } else if (process.argv[1] == 'debug') {
+      // Start the debugger agent
+      var d = NativeModule.require('_debugger');
+      d.start();
+
+    } else if (process._eval != null) {
+      // User passed '-e' or '--eval' arguments to Node.
+      evalScript('[eval]');
+    } else if (process.argv[1]) {
+      // make process.argv[1] into a full path
+      var path = NativeModule.require('path');
+      process.argv[1] = path.resolve(process.argv[1]);
+
+      // If this is a worker in cluster mode, start up the communiction
+      // channel.
+      if (process.env.NODE_UNIQUE_ID) {
+        var cluster = NativeModule.require('cluster');
+        cluster._setupWorker();
+
+        // Make sure it's not accidentally inherited by child processes.
+        delete process.env.NODE_UNIQUE_ID;
       }
 
-      return null;
-    },
-  ),
-};
+      var Module = NativeModule.require('module');
 
-Typography.defaultProps = {
-  align: 'inherit',
-  color: 'default',
-  gutterBottom: false,
-  headlineMapping: defaultHeadlineMapping,
-  inline: false,
-  noWrap: false,
-  paragraph: false,
-};
+      if (global.v8debug &&
+          process.execArgv.some(function(arg) {
+            return arg.match(/^--debug-brk(=[0-9]*)?$/);
+          })) {
 
-export default withStyles(styles, { name: 'MuiTypography', withTheme: true })(Typography);
+        // XXX Fix this terrible hack!
+        //
+        // Give the client program a few ticks to connect.
+        // Otherwise, there's a race condition where `node debug foo.js`
+        // will not be able to connect in time to catch the first
+        // breakpoint message on line 1.
+        //
+        // A better fix would be to somehow get a message from the
+        // global.v8debug object about a connection, and runMain when
+        // that occurs.  --isaacs
+
+        var debugTimeout = +process.env.NODE_DEBUG_TIMEOUT || 50;
+        setTimeout(Module.runMain, debugTimeout);
+
+      } else {
+        // Main entry point into most programs:
+        Module.runMain();
+      }
+
+    } else {
+      var Module = NativeModule.require('module');
+
+      // If -i or --interactive were passed, or stdin is a TTY.
+      if (process._forceRepl || NativeModule.require('tty').isatty(0)) {
+        // REPL
+        var opts = {
+          useGlobal: true,
+          ignoreUndefined: false
+        };
+        if (parseInt(process.env['NODE_NO_READLINE'], 10)) {
+          opts.terminal = false;
+        }
+        if (parseInt(process.env['NODE_DISABLE_COLORS'], 10)) {
+          opts.useColors = false;
+        }
+        var repl = Module.requireRepl().start(opts);
+        repl.on('exit', function() {
+          process.exit();
+        });
+
+      } else {
+        // Read all of stdin - execute it.
+        process.stdin.setEncoding('utf8');
+
+        var code = '';
+        process.stdin.on('data', function(d) {
+          code += d;
+        });
+
+        process.stdin.on('end', function() {
+          process._eval = code;
+          evalScript('[stdin]');
+        });
+      }
+    }
+  }
+
+  startup.globalVariables = function() {
+    global.process = process;
+    global.global = global;
+    global.GLOBAL = global;
+    global.root = global;
+    global.Buffer = NativeModule.require('buffer').Buffer;
+    process.binding('buffer').setFastBufferConstructor(global.Buffer);
+    process.domain = null;
+    process._exiting = false;
+  };
+
+  startup.globalTimeouts = function() {
+    global.setTimeout = function() {
+      var t = NativeModule.require('timers');
+      return t.setTimeout.apply(this, arguments);
+    };
+
+    global.setInterval = function() {
+      var t = NativeModule.require('timers');
+      return t.setInterval.apply(this, arguments);
+    };
+
+    global.clearTimeout = function() {
+      var t = NativeModule.require('timers');
+      return t.clearTimeout.apply(this, arguments);
+    };
+
+    global.clearInterval = function() {
+      var t = NativeModule.require('timers');
+      return t.clearInterval.apply(this, arguments);
+    };
+
+    global.setImmediate = function() {
+      var t = NativeModule.require('timers');
+      return t.setImmediate.apply(this, arguments);
+    };
+
+    global.clearImmediate = function() {
+      var t = NativeModule.require('timers');
+      return t.clearImmediate.apply(this, arguments);
+    };
+  };
+
+  startup.globalConsole = function() {
+    global.__defineGetter__('console', function() {
+      return NativeModule.require('console');
+    });
+  };
+
+
+  startup._lazyConstants = null;
+
+  startup.lazyConstants = function() {
+    if (!startup._lazyConstants) {
+      startup._lazyConstants = process.binding('constants');
+    }
+    return startup._lazyConstants;
+  };
+
+  startup.processFatal = function() {
+    // call into the active domain, or emit uncaughtException,
+    // and exit if there are no listeners.
+    process._fatalException = function(er) {
+      var caught = false;
+      if (process.domain) {
+        var domain = process.domain;
+        var domainModule = NativeModule.require('domain');
+        var domainStack = domainModule._stack;
+
+        // ignore errors on disposed domains.
+        //
+        // XXX This is a bit stupid.  We should probably get rid of
+        // domain.dispose() altogether.  It's almost always a terrible
+        // idea.  --isaacs
+        if (domain._disposed)
+          return true;
+
+        er.domain = domain;
+        er.domainThrown = true;
+
+        // The top-level domain-handler is handled separately.
+        //
+        // The reason is that if V8 was passed a command line option
+        // asking it to abort on an uncaught exception (currently
+        // "--abort-on-uncaught-exception"), we want an uncaught exception
+        // in the top-level domain error handler to make the
+        // process abort. Using try/catch here would always make V8 think
+        // that these exceptions are caught, and thus would prevent it from
+        // aborting in these cases.
+        if (domainStack.length === 1) {
+          try {
+            // Set the _emittingTopLevelDomainError so that we know that, even
+            // if technically the top-level domain is still active, it would
+            // be ok to abort on an uncaught exception at this point
+            process._emittingTopLevelDomainError = true;
+            caught = domain.emit('error', er);
+          } finally {
+            process._emittingTopLevelDomainError = false;
+          }
+        } else {
+          // wrap this in a try/catch so we don't get infinite throwing
+          try {
+            // One of three things will happen here.
+            //
+            // 1. There is a handler, caught = true
+            // 2. There is no handler, caught = false
+            // 3. It throws, caught = false
+            //
+            // If caught is false after this, then there's no need to exit()
+            // the domain, because we're going to crash the process anyway.
+            caught = domain.emit('error', er);
+
+            // Exit all domains on the stack.  Uncaught exceptions end the
+            // current tick and no domains should be left on the stack
+            // between ticks.
+            var domainModule = NativeModule.require('domain');
+            domainStack.length = 0;
+            domainModule.active = process.domain = null;
+          } catch (er2) {
+            // The domain error handler threw!  oh no!
+            // See if another domain can catch THIS error,
+            // or else crash on the original one.
+            // If the user already exited it, then don't double-exit.
+            if (domain === domainModule.active)
+              domainStack.pop();
+            if (domainStack.length) {
+              var parentDomain = domainStack[domainStack.length - 1];
+              process.domain = domainModule.active = parentDomain;
+              caught = process._fatalException(er2);
+            } else {
+              caught = false;
+            }
+          }
+        }
+      } else {
+        caught = process.emit('uncaughtException', er);
+      }
+      // if someone handled it, then great.  otherwise, die in C++ land
+      // since that means that we'll exit the process, emit the 'exit' event
+      if (!caught) {
+        try {
+          if (!process._exiting) {
+            process._exiting = true;
+            process.emit('exit', 1);
+          }
+        } catch (er) {
+          // nothing to be done about it at this point.
+        }
+      }
+      // if we handled an error, then make sure any ticks get processed
+      if (caught)
+        process._needTickCallback();
+      return caught;
+    };
+  };
+
+  var assert;
+  startup.processAssert = function() {
+    // Note that calls to assert() are pre-processed out by JS2C for the
+    // normal build of node. They persist only in the node_g build.
+    // Similarly for debug().
+    assert = process.assert = function(x, msg) {
+      if (!x) throw new Error(msg || 'assertion error');
+    };
+  };
+
+  startup.processConfig = function() {
+    // used for `process.config`, but not a real module
+    var config = NativeModule._source.config;
+    delete NativeModule._source.config;
+
+    // strip the gyp comment line at the beginning
+    config = config.split('\n').slice(1).join('\n').replace(/'/g, '"');
+
+    process.config = JSON.parse(config, function(key, value) {
+      if (value === 'true') return true;
+      if (value === 'false') return false;
+      return value;
+    });
+  };
+
+  startup.processNextTick = function() {
+    var _needTickCallback = process._needTickCallback;
+    var nextTickQueue = [];
+    var needSpinner = true;
+    var inTick = false;
+
+    // this infobox thing is used so that the C++ code in src/node.cc
+    // can have easy accesss to our nextTick state, and avoid unnecessary
+    // calls into process._tickCallback.
+    // order is [length, index, depth]
+    // Never write code like this without very good reason!
+    var infoBox = process._tickInfoBox;
+    var length = 0;
+    var index = 1;
+    var depth = 2;
+
+    process.nextTick = function nextTick(cb) {
+      process._currentTickHandler(cb);
+    };
+
+    // needs to be accessible from cc land
+    process._currentTickHandler = _nextTick;
+    process._nextDomainTick = _nextDomainTick;
+    process._tickCallback = _tickCallback;
+    process._tickDomainCallback = _tickDomainCallback;
+    process._tickFromSpinner = _tickFromSpinner;
+
+    // the maximum number of times it'll process something like
+    // nextTick(function f(){nextTick(f)})
+    // It's unlikely, but not illegal, to hit this limit.  When
+    // that happens, it yields to libuv's tick spinner.
+    // This is a loop counter, not a stack depth, so we aren't using
+    // up lots of memory here.  I/O can sneak in before nextTick if this
+    // limit is hit, which is not ideal, but not terrible.
+    process.maxTickDepth = 1000;
+
+    function tickDone(tickDepth_) {
+      if (infoBox[length] !== 0) {
+        if (infoBox[length] <= infoBox[index]) {
+          nextTickQueue = [];
+          infoBox[length] = 0;
+        } else {
+          nextTickQueue.splice(0, infoBox[index]);
+          infoBox[length] = nextTickQueue.length;
+          if (needSpinner) {
+            _needTickCallback();
+            needSpinner = false;
+          }
+        }
+      }
+      inTick = false;
+      infoBox[index] = 0;
+      infoBox[depth] = tickDepth_;
+    }
+
+    function maxTickWarn() {
+      // XXX Remove all this maxTickDepth stuff in 0.11
+      var msg = '(node) warning: Recursive process.nextTick detected. ' +
+                'This will break in the next version of node. ' +
+                'Please use setImmediate for recursive deferral.';
+      if (process.throwDeprecation)
+        throw new Error(msg);
+      else if (process.traceDeprecation)
+        console.trace(msg);
+      else
+        console.error(msg);
+    }
+
+    function _tickFromSpinner() {
+      needSpinner = true;
+      // coming from spinner, reset!
+      if (infoBox[depth] !== 0)
+        infoBox[depth] = 0;
+      // no callbacks to run
+      if (infoBox[length] === 0)
+        return infoBox[index] = infoBox[depth] = 0;
+      process._tickCallback();
+    }
+
+    // run callbacks that have no domain
+    // using domains will cause this to be overridden
+    function _tickCallback() {
+      var callback, nextTickLength, threw;
+
+      if (inTick) return;
+      if (infoBox[length] === 0) {
+        infoBox[index] = 0;
+        infoBox[depth] = 0;
+        return;
+      }
+      inTick = true;
+
+      while (infoBox[depth]++ < process.maxTickDepth) {
+        nextTickLength = infoBox[length];
+        if (infoBox[index] === nextTickLength)
+          return tickDone(0);
+
+        while (infoBox[index] < nextTickLength) {
+          callback = nextTickQueue[infoBox[index]++].callback;
+          threw = true;
+          try {
+            callback();
+            threw = false;
+          } finally {
+            if (threw) tickDone(infoBox[depth]);
+          }
+        }
+      }
+
+      tickDone(0);
+    }
+
+    function _tickDomainCallback() {
+      var nextTickLength, tock, callback, threw;
+
+      // if you add a nextTick in a domain's error handler, then
+      // it's possible to cycle indefinitely.  Normally, the tickDone
+      // in the finally{} block below will prevent this, however if
+      // that error handler ALSO triggers multiple MakeCallbacks, then
+      // it'll try to keep clearing the queue, since the finally block
+      // fires *before* the error hits the top level and is handled.
+      if (infoBox[depth] >= process.maxTickDepth)
+        return _needTickCallback();
+
+      if (inTick) return;
+      inTick = true;
+
+      // always do this at least once.  otherwise if process.maxTickDepth
+      // is set to some negative value, or if there were repeated errors
+      // preventing depth from being cleared, we'd never process any
+      // of them.
+      while (infoBox[depth]++ < process.maxTickDepth) {
+        nextTickLength = infoBox[length];
+        if (infoBox[index] === nextTickLength)
+          return tickDone(0);
+
+        while (infoBox[index] < nextTickLength) {
+          tock = nextTickQueue[infoBox[index]++];
+          callback = tock.callback;
+          if (tock.domain) {
+            if (tock.domain._disposed) continue;
+            tock.domain.enter();
+          }
+          threw = true;
+          try {
+            callback();
+            threw = false;
+          } finally {
+            // finally blocks fire before the error hits the top level,
+            // so we can't clear the depth at this point.
+            if (threw) tickDone(infoBox[depth]);
+          }
+          if (tock.domain) {
+            tock.domain.exit();
+          }
+        }
+      }
+
+      tickDone(0);
+    }
+
+    function _nextTick(callback) {
+      // on the way out, don't bother. it won't get fired anyway.
+      if (process._exiting)
+        return;
+      if (infoBox[depth] >= process.maxTickDepth)
+        maxTickWarn();
+
+      var obj = { callback: callback, domain: null };
+
+      nextTickQueue.push(obj);
+      infoBox[length]++;
+
+      if (needSpinner) {
+        _needTickCallback();
+        needSpinner = false;
+      }
+    }
+
+    function _nextDomainTick(callback) {
+      // on the way out, don't bother. it won't get fired anyway.
+      if (process._exiting)
+        return;
+      if (infoBox[depth] >= process.maxTickDepth)
+        maxTickWarn();
+
+      var obj = { callback: callback, domain: process.domain };
+
+      nextTickQueue.push(obj);
+      infoBox[length]++;
+
+      if (needSpinner) {
+        _needTickCallback();
+        needSpinner = false;
+      }
+    }
+  };
+
+  function evalScript(name) {
+    var Module = NativeModule.require('module');
+    var path = NativeModule.require('path');
+    var cwd = process.cwd();
+
+    var module = new Module(name);
+    module.filename = path.join(cwd, name);
+    module.paths = Module._nodeModulePaths(cwd);
+    var script = process._eval;
+    if (!Module._contextLoad) {
+      var body = script;
+      script = 'global.__filename = ' + JSON.stringify(name) + ';\n' +
+               'global.exports = exports;\n' +
+               'global.module = module;\n' +
+               'global.__dirname = __dirname;\n' +
+               'global.require = require;\n' +
+               'return require("vm").runInThisContext(' +
+               JSON.stringify(body) + ', ' +
+               JSON.stringify(name) + ', true);\n';
+    }
+    var result = module._compile(script, name + '-wrapper');
+    if (process._print_eval) console.log(result);
+  }
+
+  function errnoException(errorno, syscall) {
+    // TODO make this more compatible with ErrnoException from src/node.cc
+    // Once all of Node is using this function the ErrnoException from
+    // src/node.cc should be removed.
+    var e = new Error(syscall + ' ' + errorno);
+    e.errno = e.code = errorno;
+    e.syscall = syscall;
+    return e;
+  }
+
+  function createWritableStdioStream(fd) {
+    var stream;
+    var tty_wrap = process.binding('tty_wrap');
+
+    // Note stream._type is used for test-module-load-list.js
+
+    switch (tty_wrap.guessHandleType(fd)) {
+      case 'TTY':
+        var tty = NativeModule.require('tty');
+        stream = new tty.WriteStream(fd);
+        stream._type = 'tty';
+
+        // Hack to have stream not keep the event loop alive.
+        // See https://github.com/joyent/node/issues/1726
+        if (stream._handle && stream._handle.unref) {
+          stream._handle.unref();
+        }
+        break;
+
+      case 'FILE':
+        var fs = NativeModule.require('fs');
+        stream = new fs.SyncWriteStream(fd, { autoClose: false });
+        stream._type = 'fs';
+        break;
+
+      case 'PIPE':
+      case 'TCP':
+        var net = NativeModule.require('net');
+        stream = new net.Socket({
+          fd: fd,
+          readable: false,
+          writable: true
+        });
+
+        // FIXME Should probably have an option in net.Socket to create a
+        // stream from an existing fd which is writable only. But for now
+        // we'll just add this hack and set the `readable` member to false.
+        // Test: ./node test/fixtures/echo.js < /etc/passwd
+        stream.readable = false;
+        stream.read = null;
+        stream._type = 'pipe';
+
+        // FIXME Hack to have stream not keep the event loop alive.
+        // See https://github.com/joyent/node/issues/1726
+        if (stream._handle && stream._handle.unref) {
+          stream._handle.unref();
+        }
+        break;
+
+      default:
+        // Probably an error on in uv_guess_handle()
+        throw new Error('Implement me. Unknown stream file type!');
+    }
+
+    // For supporting legacy API we put the FD here.
+    stream.fd = fd;
+
+    stream._isStdio = true;
+
+    return stream;
+  }
+
+  startup.processStdio = function() {
+    var stdin, stdout, stderr;
+
+    process.__defineGetter__('stdout', function() {
+      if (stdout) return stdout;
+      stdout = createWritableStdioStream(1);
+      stdout.destroy = stdout.destroySoon = function(er) {
+        er = er || new Error('process.stdout cannot be closed.');
+        stdout.emit('error', er);
+      };
+      if (stdout.isTTY) {
+        process.on('SIGWINCH', function() {
+          stdout._refreshSize();
+        });
+      }
+      return stdout;
+    });
+
+    process.__defineGetter__('stderr', function() {
+      if (stderr) return stderr;
+      stderr = createWritableStdioStream(2);
+      stderr.destroy = stderr.destroySoon = function(er) {
+        er = er || new Error('process.stderr cannot be closed.');
+        stderr.emit('error', er);
+      };
+      return stderr;
+    });
+
+    process.__defineGetter__('stdin', function() {
+      if (stdin) return stdin;
+
+      var tty_wrap = process.binding('tty_wrap');
+      var fd = 0;
+
+      switch (tty_wrap.guessHandleType(fd)) {
+        case 'TTY':
+          var tty = NativeModule.require('tty');
+          stdin = new tty.ReadStream(fd, {
+            highWaterMark: 0,
+            readable: true,
+            writable: false
+          });
+          break;
+
+        case 'FILE':
+          var fs = NativeModule.require('fs');
+          stdin = new fs.ReadStream(null, { fd: fd, autoClose: false });
+          break;
+
+        case 'PIPE':
+        case 'TCP':
+          var net = NativeModule.require('net');
+          stdin = new net.Socket({
+            fd: fd,
+            readable: true,
+            writable: false
+          });
+          break;
+
+        default:
+          // Probably an error on in uv_guess_handle()
+          throw new Error('Implement me. Unknown stdin file type!');
+      }
+
+      // For supporting legacy API we put the FD here.
+      stdin.fd = fd;
+
+      // stdin starts out life in a paused state, but node doesn't
+      // know yet.  Explicitly to readStop() it to put it in the
+      // not-reading state.
+      if (stdin._handle && stdin._handle.readStop) {
+        stdin._handle.reading = false;
+        stdin._readableState.reading = false;
+        stdin._handle.readStop();
+      }
+
+      // if the user calls stdin.pause(), then we need to stop reading
+      // immediately, so that the process can close down.
+      stdin.on('pause', function() {
+        if (!stdin._handle)
+          return;
+        stdin._readableState.reading = false;
+        stdin._handle.reading = false;
+        stdin._handle.readStop();
+      });
+
+      return stdin;
+    });
+
+    process.openStdin = function() {
+      process.stdin.resume();
+      return process.stdin;
+    };
+  };
+
+  startup.processKillAndExit = function() {
+    process.exit = function(code) {
+      if (!process._exiting) {
+        process._exiting = true;
+        process.emit('exit', code || 0);
+      }
+      process.reallyExit(code || 0);
+    };
+
+    process.kill = function(pid, sig) {
+      var r;
+
+      // preserve null signal
+      if (0 === sig) {
+        r = process._kill(pid, 0);
+      } else {
+        sig = sig || 'SIGTERM';
+        if (startup.lazyConstants()[sig] &&
+            sig.slice(0, 3) === 'SIG') {
+          r = process._kill(pid, startup.lazyConstants()[sig]);
+        } else {
+          throw new Error('Unknown signal: ' + sig);
+        }
+      }
+
+      if (r) {
+        throw errnoException(process._errno, 'kill');
+      }
+
+      return true;
+    };
+  };
+
+  startup.processSignalHandlers = function() {
+    // Load events module in order to access prototype elements on process like
+    // process.addListener.
+    var signalWraps = {};
+    var addListener = process.addListener;
+    var removeListener = process.removeListener;
+
+    function isSignal(event) {
+      return event.slice(0, 3) === 'SIG' &&
+             startup.lazyConstants().hasOwnProperty(event);
+    }
+
+    // Wrap addListener for the special signal types
+    process.on = process.addListener = function(type, listener) {
+      if (isSignal(type) &&
+          !signalWraps.hasOwnProperty(type)) {
+        var Signal = process.binding('signal_wrap').Signal;
+        var wrap = new Signal();
+
+        wrap.unref();
+
+        wrap.onsignal = function() { process.emit(type); };
+
+        var signum = startup.lazyConstants()[type];
+        var r = wrap.start(signum);
+        if (r) {
+          wrap.close();
+          throw errnoException(process._errno, 'uv_signal_start');
+        }
+
+        signalWraps[type] = wrap;
+      }
+
+      return addListener.apply(this, arguments);
+    };
+
+    process.removeListener = function(type, listener) {
+      var ret = removeListener.apply(this, arguments);
+      if (isSignal(type)) {
+        assert(signalWraps.hasOwnProperty(type));
+
+        if (this.listeners(type).length === 0) {
+          signalWraps[type].close();
+          delete signalWraps[type];
+        }
+      }
+
+      return ret;
+    };
+  };
+
+
+  startup.processChannel = function() {
+    // If we were spawned with env NODE_CHANNEL_FD then load that up and
+    // start parsing data from that stream.
+    if (process.env.NODE_CHANNEL_FD) {
+      var fd = parseInt(process.env.NODE_CHANNEL_FD, 10);
+      assert(fd >= 0);
+
+      // Make sure it's not accidentally inherited by child processes.
+      delete process.env.NODE_CHANNEL_FD;
+
+      var cp = NativeModule.require('child_process');
+
+      // Load tcp_wrap to avoid situation where we might immediately receive
+      // a message.
+      // FIXME is this really necessary?
+      process.binding('tcp_wrap');
+
+      cp._forkChild(fd);
+      assert(process.send);
+    }
+  }
+
+  startup.resolveArgv0 = function() {
+    var cwd = process.cwd();
+    var isWindows = process.platform === 'win32';
+
+    // Make process.argv[0] into a full path, but only touch argv[0] if it's
+    // not a system $PATH lookup.
+    // TODO: Make this work on Windows as well.  Note that "node" might
+    // execute cwd\node.exe, or some %PATH%\node.exe on Windows,
+    // and that every directory has its own cwd, so d:node.exe is valid.
+    var argv0 = process.argv[0];
+    if (!isWindows && argv0.indexOf('/') !== -1 && argv0.charAt(0) !== '/') {
+      var path = NativeModule.require('path');
+      process.argv[0] = path.join(cwd, process.argv[0]);
+    }
+  };
+
+  // Below you find a minimal module system, which is used to load the node
+  // core modules found in lib/*.js. All core modules are compiled into the
+  // node binary, so they can be loaded faster.
+
+  var Script = process.binding('evals').NodeScript;
+  var runInThisContext = Script.runInThisContext;
+
+  function NativeModule(id) {
+    this.filename = id + '.js';
+    this.id = id;
+    this.exports = {};
+    this.loaded = false;
+  }
+
+  NativeModule._source = process.binding('natives');
+  NativeModule._cache = {};
+
+  NativeModule.require = function(id) {
+    if (id == 'native_module') {
+      return NativeModule;
+    }
+
+    var cached = NativeModule.getCached(id);
+    if (cached) {
+      return cached.exports;
+    }
+
+    if (!NativeModule.exists(id)) {
+      throw new Error('No such native module ' + id);
+    }
+
+    process.moduleLoadList.push('NativeModule ' + id);
+
+    var nativeModule = new NativeModule(id);
+
+    nativeModule.cache();
+    nativeModule.compile();
+
+    return nativeModule.exports;
+  };
+
+  NativeModule.getCached = function(id) {
+    return NativeModule._cache[id];
+  }
+
+  NativeModule.exists = function(id) {
+    return NativeModule._source.hasOwnProperty(id);
+  }
+
+  NativeModule.getSource = function(id) {
+    return NativeModule._source[id];
+  }
+
+  NativeModule.wrap = function(script) {
+    return NativeModule.wrapper[0] + script + NativeModule.wrapper[1];
+  };
+
+  NativeModule.wrapper = [
+    '(function (exports, require, module, __filename, __dirname) { ',
+    '\n});'
+  ];
+
+  NativeModule.prototype.compile = function() {
+    var source = NativeModule.getSource(this.id);
+    source = NativeModule.wrap(source);
+
+    var fn = runInThisContext(source, this.filename, true);
+    fn(this.exports, NativeModule.require, this, this.filename);
+
+    this.loaded = true;
+  };
+
+  NativeModule.prototype.cache = function() {
+    NativeModule._cache[this.id] = this;
+  };
+
+  startup();
+});

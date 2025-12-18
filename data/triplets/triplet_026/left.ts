@@ -1,369 +1,440 @@
-import $$observable from './utils/symbol-observable'
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+import {
+  isNil,
+  isString,
+  isUndefined,
+} from '@nestjs/common/utils/shared.utils';
+import {
+  CONNECTION_FAILED_MESSAGE,
+  DISCONNECTED_RMQ_MESSAGE,
+  NO_MESSAGE_HANDLER,
+  RMQ_SEPARATOR,
+  RMQ_WILDCARD_ALL,
+  RMQ_WILDCARD_SINGLE,
+  RQM_DEFAULT_IS_GLOBAL_PREFETCH_COUNT,
+  RQM_DEFAULT_NOACK,
+  RQM_DEFAULT_NO_ASSERT,
+  RQM_DEFAULT_PREFETCH_COUNT,
+  RQM_DEFAULT_QUEUE,
+  RQM_DEFAULT_QUEUE_OPTIONS,
+  RQM_DEFAULT_URL,
+  RQM_NO_EVENT_HANDLER,
+  RQM_NO_MESSAGE_HANDLER,
+} from '../constants';
+import { RmqContext } from '../ctx-host';
+import { Transport } from '../enums';
+import { RmqEvents, RmqEventsMap, RmqStatus } from '../events/rmq.events';
+import { RmqUrl } from '../external/rmq-url.interface';
+import { MessageHandler, RmqOptions, TransportId } from '../interfaces';
+import {
+  IncomingRequest,
+  OutgoingResponse,
+  ReadPacket,
+} from '../interfaces/packet.interface';
+import { RmqRecordSerializer } from '../serializers/rmq-record.serializer';
+import { Server } from './server';
 
-import type {
-  Store,
-  PreloadedState,
-  StoreEnhancer,
-  Dispatch,
-  Observer,
-  ExtendState
-} from './types/store'
-import type { Action } from './types/actions'
-import type { Reducer } from './types/reducers'
-import ActionTypes from './utils/actionTypes'
-import isPlainObject from './utils/isPlainObject'
-import { kindOf } from './utils/kindOf'
+// To enable type safety for RMQ. This cant be uncommented by default
+// because it would require the user to install the amqplib package even if they dont use RabbitMQ
+// Otherwise, TypeScript would fail to compile the code.
+//
+// type AmqpConnectionManager =
+//   import('amqp-connection-manager').AmqpConnectionManager;
+// type ChannelWrapper = import('amqp-connection-manager').ChannelWrapper;
+// type Message = import('amqplib').Message;
+// type Channel = import('amqplib').Channel | import('amqplib').ConfirmChannel;
+
+type AmqpConnectionManager = any;
+type ChannelWrapper = any;
+type Message = any;
+type Channel = any;
+
+let rmqPackage = {} as any; // as typeof import('amqp-connection-manager');
+
+const INFINITE_CONNECTION_ATTEMPTS = -1;
 
 /**
- * Creates a Redux store that holds the state tree.
- * The only way to change the data in the store is to call `dispatch()` on it.
- *
- * There should only be a single store in your app. To specify how different
- * parts of the state tree respond to actions, you may combine several reducers
- * into a single reducer function by using `combineReducers`.
- *
- * @param reducer A function that returns the next state tree, given
- * the current state tree and the action to handle.
- *
- * @param preloadedState The initial state. You may optionally specify it
- * to hydrate the state from the server in universal apps, or to restore a
- * previously serialized user session.
- * If you use `combineReducers` to produce the root reducer function, this must be
- * an object with the same shape as `combineReducers` keys.
- *
- * @param enhancer The store enhancer. You may optionally specify it
- * to enhance the store with third-party capabilities such as middleware,
- * time travel, persistence, etc. The only store enhancer that ships with Redux
- * is `applyMiddleware()`.
- *
- * @returns A Redux store that lets you read the state, dispatch actions
- * and subscribe to changes.
+ * @publicApi
  */
-export default function createStore<
-  S,
-  A extends Action,
-  Ext = {},
-  StateExt = never
->(
-  reducer: Reducer<S, A>,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<ExtendState<S, StateExt>, A, StateExt, Ext> & Ext
-export default function createStore<
-  S,
-  A extends Action,
-  Ext = {},
-  StateExt = never
->(
-  reducer: Reducer<S, A>,
-  preloadedState?: PreloadedState<S>,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<ExtendState<S, StateExt>, A, StateExt, Ext> & Ext
-export default function createStore<
-  S,
-  A extends Action,
-  Ext = {},
-  StateExt = never
->(
-  reducer: Reducer<S, A>,
-  preloadedState?: PreloadedState<S> | StoreEnhancer<Ext, StateExt>,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<ExtendState<S, StateExt>, A, StateExt, Ext> & Ext {
-  if (
-    (typeof preloadedState === 'function' && typeof enhancer === 'function') ||
-    (typeof enhancer === 'function' && typeof arguments[3] === 'function')
-  ) {
-    throw new Error(
-      'It looks like you are passing several store enhancers to ' +
-        'createStore(). This is not supported. Instead, compose them ' +
-        'together to a single function. See https://redux.js.org/tutorials/fundamentals/part-4-store#creating-a-store-with-enhancers for an example.'
-    )
+export class ServerRMQ extends Server<RmqEvents, RmqStatus> {
+  public transportId: TransportId = Transport.RMQ;
+
+  protected server: AmqpConnectionManager | null = null;
+  protected channel: ChannelWrapper | null = null;
+  protected connectionAttempts = 0;
+  protected readonly urls: string[] | RmqUrl[];
+  protected readonly queue: string;
+  protected readonly noAck: boolean;
+  protected readonly queueOptions: any;
+  protected readonly wildcardHandlers = new Map<string, MessageHandler>();
+  protected pendingEventListeners: Array<{
+    event: keyof RmqEvents;
+    callback: RmqEvents[keyof RmqEvents];
+  }> = [];
+
+  constructor(protected readonly options: Required<RmqOptions>['options']) {
+    super();
+    this.urls = this.getOptionsProp(this.options, 'urls') || [RQM_DEFAULT_URL];
+    this.queue =
+      this.getOptionsProp(this.options, 'queue') || RQM_DEFAULT_QUEUE;
+    this.noAck = this.getOptionsProp(this.options, 'noAck', RQM_DEFAULT_NOACK);
+    this.queueOptions =
+      this.getOptionsProp(this.options, 'queueOptions') ||
+      RQM_DEFAULT_QUEUE_OPTIONS;
+
+    this.loadPackage('amqplib', ServerRMQ.name, () => require('amqplib'));
+    rmqPackage = this.loadPackage(
+      'amqp-connection-manager',
+      ServerRMQ.name,
+      () => require('amqp-connection-manager'),
+    );
+
+    this.initializeSerializer(options);
+    this.initializeDeserializer(options);
   }
 
-  if (typeof preloadedState === 'function' && typeof enhancer === 'undefined') {
-    enhancer = preloadedState as StoreEnhancer<Ext, StateExt>
-    preloadedState = undefined
-  }
-
-  if (typeof enhancer !== 'undefined') {
-    if (typeof enhancer !== 'function') {
-      throw new Error(
-        `Expected the enhancer to be a function. Instead, received: '${kindOf(
-          enhancer
-        )}'`
-      )
-    }
-
-    return enhancer(createStore)(
-      reducer,
-      preloadedState as PreloadedState<S>
-    ) as Store<ExtendState<S, StateExt>, A, StateExt, Ext> & Ext
-  }
-
-  if (typeof reducer !== 'function') {
-    throw new Error(
-      `Expected the root reducer to be a function. Instead, received: '${kindOf(
-        reducer
-      )}'`
-    )
-  }
-
-  let currentReducer = reducer
-  let currentState = preloadedState as S
-  let currentListeners: (() => void)[] | null = []
-  let nextListeners = currentListeners
-  let isDispatching = false
-
-  /**
-   * This makes a shallow copy of currentListeners so we can use
-   * nextListeners as a temporary list while dispatching.
-   *
-   * This prevents any bugs around consumers calling
-   * subscribe/unsubscribe in the middle of a dispatch.
-   */
-  function ensureCanMutateNextListeners() {
-    if (nextListeners === currentListeners) {
-      nextListeners = currentListeners.slice()
-    }
-  }
-
-  /**
-   * Reads the state tree managed by the store.
-   *
-   * @returns The current state tree of your application.
-   */
-  function getState(): S {
-    if (isDispatching) {
-      throw new Error(
-        'You may not call store.getState() while the reducer is executing. ' +
-          'The reducer has already received the state as an argument. ' +
-          'Pass it down from the top reducer instead of reading it from the store.'
-      )
-    }
-
-    return currentState as S
-  }
-
-  /**
-   * Adds a change listener. It will be called any time an action is dispatched,
-   * and some part of the state tree may potentially have changed. You may then
-   * call `getState()` to read the current state tree inside the callback.
-   *
-   * You may call `dispatch()` from a change listener, with the following
-   * caveats:
-   *
-   * 1. The subscriptions are snapshotted just before every `dispatch()` call.
-   * If you subscribe or unsubscribe while the listeners are being invoked, this
-   * will not have any effect on the `dispatch()` that is currently in progress.
-   * However, the next `dispatch()` call, whether nested or not, will use a more
-   * recent snapshot of the subscription list.
-   *
-   * 2. The listener should not expect to see all state changes, as the state
-   * might have been updated multiple times during a nested `dispatch()` before
-   * the listener is called. It is, however, guaranteed that all subscribers
-   * registered before the `dispatch()` started will be called with the latest
-   * state by the time it exits.
-   *
-   * @param listener A callback to be invoked on every dispatch.
-   * @returns A function to remove this change listener.
-   */
-  function subscribe(listener: () => void) {
-    if (typeof listener !== 'function') {
-      throw new Error(
-        `Expected the listener to be a function. Instead, received: '${kindOf(
-          listener
-        )}'`
-      )
-    }
-
-    if (isDispatching) {
-      throw new Error(
-        'You may not call store.subscribe() while the reducer is executing. ' +
-          'If you would like to be notified after the store has been updated, subscribe from a ' +
-          'component and invoke store.getState() in the callback to access the latest state. ' +
-          'See https://redux.js.org/api/store#subscribelistener for more details.'
-      )
-    }
-
-    let isSubscribed = true
-
-    ensureCanMutateNextListeners()
-    nextListeners.push(listener)
-
-    return function unsubscribe() {
-      if (!isSubscribed) {
-        return
-      }
-
-      if (isDispatching) {
-        throw new Error(
-          'You may not unsubscribe from a store listener while the reducer is executing. ' +
-            'See https://redux.js.org/api/store#subscribelistener for more details.'
-        )
-      }
-
-      isSubscribed = false
-
-      ensureCanMutateNextListeners()
-      const index = nextListeners.indexOf(listener)
-      nextListeners.splice(index, 1)
-      currentListeners = null
-    }
-  }
-
-  /**
-   * Dispatches an action. It is the only way to trigger a state change.
-   *
-   * The `reducer` function, used to create the store, will be called with the
-   * current state tree and the given `action`. Its return value will
-   * be considered the **next** state of the tree, and the change listeners
-   * will be notified.
-   *
-   * The base implementation only supports plain object actions. If you want to
-   * dispatch a Promise, an Observable, a thunk, or something else, you need to
-   * wrap your store creating function into the corresponding middleware. For
-   * example, see the documentation for the `redux-thunk` package. Even the
-   * middleware will eventually dispatch plain object actions using this method.
-   *
-   * @param action A plain object representing “what changed”. It is
-   * a good idea to keep actions serializable so you can record and replay user
-   * sessions, or use the time travelling `redux-devtools`. An action must have
-   * a `type` property which may not be `undefined`. It is a good idea to use
-   * string constants for action types.
-   *
-   * @returns For convenience, the same action object you dispatched.
-   *
-   * Note that, if you use a custom middleware, it may wrap `dispatch()` to
-   * return something else (for example, a Promise you can await).
-   */
-  function dispatch(action: A) {
-    if (!isPlainObject(action)) {
-      throw new Error(
-        `Actions must be plain objects. Instead, the actual type was: '${kindOf(
-          action
-        )}'. You may need to add middleware to your store setup to handle dispatching other values, such as 'redux-thunk' to handle dispatching functions. See https://redux.js.org/tutorials/fundamentals/part-4-store#middleware and https://redux.js.org/tutorials/fundamentals/part-6-async-logic#using-the-redux-thunk-middleware for examples.`
-      )
-    }
-
-    if (typeof action.type === 'undefined') {
-      throw new Error(
-        'Actions may not have an undefined "type" property. You may have misspelled an action type string constant.'
-      )
-    }
-
-    if (isDispatching) {
-      throw new Error('Reducers may not dispatch actions.')
-    }
-
+  public async listen(
+    callback: (err?: unknown, ...optionalParams: unknown[]) => void,
+  ): Promise<void> {
     try {
-      isDispatching = true
-      currentState = currentReducer(currentState, action)
-    } finally {
-      isDispatching = false
+      await this.start(callback);
+    } catch (err) {
+      callback(err);
     }
-
-    const listeners = (currentListeners = nextListeners)
-    for (let i = 0; i < listeners.length; i++) {
-      const listener = listeners[i]
-      listener()
-    }
-
-    return action
   }
 
-  /**
-   * Replaces the reducer currently used by the store to calculate the state.
-   *
-   * You might need this if your app implements code splitting and you want to
-   * load some of the reducers dynamically. You might also need this if you
-   * implement a hot reloading mechanism for Redux.
-   *
-   * @param nextReducer The reducer for the store to use instead.
-   * @returns The same store instance with a new reducer in place.
-   */
-  function replaceReducer<NewState, NewActions extends A>(
-    nextReducer: Reducer<NewState, NewActions>
-  ): Store<ExtendState<NewState, StateExt>, NewActions, StateExt, Ext> & Ext {
-    if (typeof nextReducer !== 'function') {
-      throw new Error(
-        `Expected the nextReducer to be a function. Instead, received: '${kindOf(
-          nextReducer
-        )}`
-      )
-    }
-
-    // TODO: do this more elegantly
-    ;(currentReducer as unknown as Reducer<NewState, NewActions>) = nextReducer
-
-    // This action has a similar effect to ActionTypes.INIT.
-    // Any reducers that existed in both the new and old rootReducer
-    // will receive the previous state. This effectively populates
-    // the new state tree with any relevant data from the old one.
-    dispatch({ type: ActionTypes.REPLACE } as A)
-    // change the type of the store by casting it to the new store
-    return store as unknown as Store<
-      ExtendState<NewState, StateExt>,
-      NewActions,
-      StateExt,
-      Ext
-    > &
-      Ext
+  public async close(): Promise<void> {
+    this.channel && (await this.channel.close());
+    this.server && (await this.server.close());
+    this.pendingEventListeners = [];
   }
 
-  /**
-   * Interoperability point for observable/reactive libraries.
-   * @returns A minimal observable of state changes.
-   * For more information, see the observable proposal:
-   * https://github.com/tc39/proposal-observable
-   */
-  function observable() {
-    const outerSubscribe = subscribe
-    return {
-      /**
-       * The minimal observable subscription method.
-       * @param observer Any object that can be used as an observer.
-       * The observer object should have a `next` method.
-       * @returns An object with an `unsubscribe` method that can
-       * be used to unsubscribe the observable from the store, and prevent further
-       * emission of values from the observable.
-       */
-      subscribe(observer: unknown) {
-        if (typeof observer !== 'object' || observer === null) {
-          throw new TypeError(
-            `Expected the observer to be an object. Instead, received: '${kindOf(
-              observer
-            )}'`
-          )
-        }
+  public async start(
+    callback?: (err?: unknown, ...optionalParams: unknown[]) => void,
+  ) {
+    this.server = this.createClient();
+    this.server!.once(RmqEventsMap.CONNECT, () => {
+      if (this.channel) {
+        return;
+      }
+      this._status$.next(RmqStatus.CONNECTED);
+      this.channel = this.server!.createChannel({
+        json: false,
+        setup: (channel: Channel) => this.setupChannel(channel, callback!),
+      });
+    });
 
-        function observeState() {
-          const observerAsObserver = observer as Observer<S>
-          if (observerAsObserver.next) {
-            observerAsObserver.next(getState())
-          }
-        }
+    const maxConnectionAttempts = this.getOptionsProp(
+      this.options,
+      'maxConnectionAttempts',
+      INFINITE_CONNECTION_ATTEMPTS,
+    );
 
-        observeState()
-        const unsubscribe = outerSubscribe(observeState)
-        return { unsubscribe }
+    this.registerConnectListener();
+    this.registerDisconnectListener();
+    this.pendingEventListeners.forEach(({ event, callback }) =>
+      this.server!.on(event, callback),
+    );
+    this.pendingEventListeners = [];
+
+    const connectFailedEvent = 'connectFailed';
+    this.server!.once(
+      connectFailedEvent,
+      async (error: Record<string, unknown>) => {
+        this._status$.next(RmqStatus.DISCONNECTED);
+
+        this.logger.error(CONNECTION_FAILED_MESSAGE);
+        if (error?.err) {
+          this.logger.error(error.err);
+        }
+        const isReconnecting = !!this.channel;
+        if (
+          maxConnectionAttempts === INFINITE_CONNECTION_ATTEMPTS ||
+          isReconnecting
+        ) {
+          return;
+        }
+        if (++this.connectionAttempts === maxConnectionAttempts) {
+          await this.close();
+          callback?.(error.err ?? new Error(CONNECTION_FAILED_MESSAGE));
+        }
       },
+    );
+  }
 
-      [$$observable]() {
-        return this
+  public createClient<T = any>(): T {
+    const socketOptions = this.getOptionsProp(this.options, 'socketOptions');
+    return rmqPackage.connect(this.urls, {
+      connectionOptions: socketOptions?.connectionOptions,
+      heartbeatIntervalInSeconds: socketOptions?.heartbeatIntervalInSeconds,
+      reconnectTimeInSeconds: socketOptions?.reconnectTimeInSeconds,
+    });
+  }
+
+  private registerConnectListener() {
+    this.server!.on(RmqEventsMap.CONNECT, (err: any) => {
+      this._status$.next(RmqStatus.CONNECTED);
+    });
+  }
+
+  private registerDisconnectListener() {
+    this.server!.on(RmqEventsMap.DISCONNECT, (err: any) => {
+      this._status$.next(RmqStatus.DISCONNECTED);
+      this.logger.error(DISCONNECTED_RMQ_MESSAGE);
+      this.logger.error(err);
+    });
+  }
+
+  public async setupChannel(channel: Channel, callback: Function) {
+    const noAssert =
+      this.getOptionsProp(this.options, 'noAssert') ??
+      this.queueOptions.noAssert ??
+      RQM_DEFAULT_NO_ASSERT;
+
+    if (!noAssert) {
+      await channel.assertQueue(this.queue, this.queueOptions);
+    }
+
+    const isGlobalPrefetchCount = this.getOptionsProp(
+      this.options,
+      'isGlobalPrefetchCount',
+      RQM_DEFAULT_IS_GLOBAL_PREFETCH_COUNT,
+    );
+    const prefetchCount = this.getOptionsProp(
+      this.options,
+      'prefetchCount',
+      RQM_DEFAULT_PREFETCH_COUNT,
+    );
+
+    if (this.options.exchange || this.options.wildcards) {
+      // Use queue name as exchange name if exchange is not provided and "wildcards" is set to true
+      const exchange = this.getOptionsProp(
+        this.options,
+        'exchange',
+        this.options.queue,
+      );
+      const exchangeType = this.getOptionsProp(
+        this.options,
+        'exchangeType',
+        'topic',
+      );
+      await channel.assertExchange(exchange, exchangeType, {
+        durable: true,
+        arguments: this.getOptionsProp(this.options, 'exchangeArguments', {}),
+      });
+
+      if (this.options.routingKey) {
+        await channel.bindQueue(this.queue, exchange, this.options.routingKey);
+      }
+
+      if (this.options.wildcards) {
+        const routingKeys = Array.from(this.getHandlers().keys());
+        await Promise.all(
+          routingKeys.map(routingKey =>
+            channel.bindQueue(this.queue, exchange, routingKey),
+          ),
+        );
+
+        // When "wildcards" is set to true,  we need to initialize wildcard handlers
+        // otherwise we would not be able to associate the incoming messages with the handlers
+        this.initializeWildcardHandlersIfExist();
       }
     }
+
+    await channel.prefetch(prefetchCount, isGlobalPrefetchCount);
+    channel.consume(
+      this.queue,
+      (msg: Record<string, any> | null) => this.handleMessage(msg!, channel),
+      {
+        noAck: this.noAck,
+        consumerTag: this.getOptionsProp(
+          this.options,
+          'consumerTag',
+          undefined,
+        ),
+      },
+    );
+    callback();
   }
 
-  // When a store is created, an "INIT" action is dispatched so that every
-  // reducer returns their initial state. This effectively populates
-  // the initial state tree.
-  dispatch({ type: ActionTypes.INIT } as A)
+  public async handleMessage(
+    message: Record<string, any>,
+    channel: any,
+  ): Promise<void> {
+    if (isNil(message)) {
+      return;
+    }
+    const { content, properties } = message;
+    const rawMessage = this.parseMessageContent(content);
+    const packet = await this.deserializer.deserialize(rawMessage, properties);
+    const pattern = isString(packet.pattern)
+      ? packet.pattern
+      : JSON.stringify(packet.pattern);
 
-  const store = {
-    dispatch: dispatch as Dispatch<A>,
-    subscribe,
-    getState,
-    replaceReducer,
-    [$$observable]: observable
-  } as unknown as Store<ExtendState<S, StateExt>, A, StateExt, Ext> & Ext
-  return store
+    const rmqContext = new RmqContext([message, channel, pattern]);
+    if (isUndefined((packet as IncomingRequest).id)) {
+      return this.handleEvent(pattern, packet, rmqContext);
+    }
+    const handler = this.getHandlerByPattern(pattern);
+
+    if (!handler) {
+      if (!this.noAck) {
+        this.logger.warn(RQM_NO_MESSAGE_HANDLER`${pattern}`);
+        this.channel!.nack(rmqContext.getMessage() as Message, false, false);
+      }
+      const status = 'error';
+      const noHandlerPacket = {
+        id: (packet as IncomingRequest).id,
+        err: NO_MESSAGE_HANDLER,
+        status,
+      };
+      return this.sendMessage(
+        noHandlerPacket,
+        properties.replyTo,
+        properties.correlationId,
+      );
+    }
+    const response$ = this.transformToObservable(
+      await handler(packet.data, rmqContext),
+    );
+
+    const publish = <T>(data: T) =>
+      this.sendMessage(data, properties.replyTo, properties.correlationId);
+
+    response$ && this.send(response$, publish);
+  }
+
+  public async handleEvent(
+    pattern: string,
+    packet: ReadPacket,
+    context: RmqContext,
+  ): Promise<any> {
+    const handler = this.getHandlerByPattern(pattern);
+    if (!handler && !this.noAck) {
+      this.channel!.nack(context.getMessage() as Message, false, false);
+      return this.logger.warn(RQM_NO_EVENT_HANDLER`${pattern}`);
+    }
+    return super.handleEvent(pattern, packet, context);
+  }
+
+  public sendMessage<T = any>(
+    message: T,
+    replyTo: any,
+    correlationId: string,
+  ): void {
+    const outgoingResponse = this.serializer.serialize(
+      message as unknown as OutgoingResponse,
+    );
+    const options = outgoingResponse.options;
+    delete outgoingResponse.options;
+
+    const buffer = Buffer.from(JSON.stringify(outgoingResponse));
+    const sendOptions = { correlationId, ...options };
+    this.channel!.sendToQueue(replyTo, buffer, sendOptions);
+  }
+
+  public unwrap<T>(): T {
+    if (!this.server) {
+      throw new Error(
+        'Not initialized. Please call the "listen"/"startAllMicroservices" method before accessing the server.',
+      );
+    }
+    return this.server as T;
+  }
+
+  public on<
+    EventKey extends keyof RmqEvents = keyof RmqEvents,
+    EventCallback extends RmqEvents[EventKey] = RmqEvents[EventKey],
+  >(event: EventKey, callback: EventCallback) {
+    if (this.server) {
+      this.server.addListener(event, callback);
+    } else {
+      this.pendingEventListeners.push({ event, callback });
+    }
+  }
+
+  public getHandlerByPattern(pattern: string): MessageHandler | null {
+    if (!this.options.wildcards) {
+      return super.getHandlerByPattern(pattern);
+    }
+
+    // Search for non-wildcard handler first
+    const handler = super.getHandlerByPattern(pattern);
+    if (handler) {
+      return handler;
+    }
+
+    // Search for wildcard handler
+    if (this.wildcardHandlers.size === 0) {
+      return null;
+    }
+    for (const [wildcardPattern, handler] of this.wildcardHandlers) {
+      if (this.matchRmqPattern(wildcardPattern, pattern)) {
+        return handler;
+      }
+    }
+    return null;
+  }
+
+  protected initializeSerializer(options: RmqOptions['options']) {
+    this.serializer = options?.serializer ?? new RmqRecordSerializer();
+  }
+
+  private parseMessageContent(content: Buffer) {
+    try {
+      return JSON.parse(content.toString());
+    } catch {
+      return content.toString();
+    }
+  }
+
+  private initializeWildcardHandlersIfExist() {
+    if (this.wildcardHandlers.size !== 0) {
+      return;
+    }
+    const handlers = this.getHandlers();
+
+    handlers.forEach((handler, pattern) => {
+      if (
+        pattern.includes(RMQ_WILDCARD_ALL) ||
+        pattern.includes(RMQ_WILDCARD_SINGLE)
+      ) {
+        this.wildcardHandlers.set(pattern, handler);
+      }
+    });
+  }
+
+  private matchRmqPattern(pattern: string, routingKey: string): boolean {
+    if (!routingKey) {
+      return pattern === RMQ_WILDCARD_ALL;
+    }
+
+    const patternSegments = pattern.split(RMQ_SEPARATOR);
+    const routingKeySegments = routingKey.split(RMQ_SEPARATOR);
+
+    const patternSegmentsLength = patternSegments.length;
+    const routingKeySegmentsLength = routingKeySegments.length;
+    const lastIndex = patternSegmentsLength - 1;
+
+    for (const [i, currentPattern] of patternSegments.entries()) {
+      const currentRoutingKey = routingKeySegments[i];
+
+      if (!currentRoutingKey && !currentPattern) {
+        continue;
+      }
+      if (!currentRoutingKey && currentPattern !== RMQ_WILDCARD_ALL) {
+        return false;
+      }
+      if (currentPattern === RMQ_WILDCARD_ALL) {
+        return i === lastIndex;
+      }
+      if (
+        currentPattern !== RMQ_WILDCARD_SINGLE &&
+        currentPattern !== currentRoutingKey
+      ) {
+        return false;
+      }
+    }
+    return patternSegmentsLength === routingKeySegmentsLength;
+  }
 }

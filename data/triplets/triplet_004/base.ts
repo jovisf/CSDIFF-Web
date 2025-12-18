@@ -1,1070 +1,1111 @@
-import fs from "node:fs";
-import { execSync } from "node:child_process";
-import * as ViteNode from "../vite/vite-node";
-import type * as Vite from "vite";
-import Path from "pathe";
-import chokidar, {
-  type FSWatcher,
-  type EmitArgs as ChokidarEmitArgs,
-} from "chokidar";
-import colors from "picocolors";
-import { readPackageJSON, sortPackage, updatePackage } from "pkg-types";
-import pick from "lodash/pick";
-import omit from "lodash/omit";
-import cloneDeep from "lodash/cloneDeep";
-import isEqual from "lodash/isEqual";
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
 
-import {
-  type RouteManifest,
-  type RouteManifestEntry,
-  type RouteConfigEntry,
-  setAppDirectory,
-  validateRouteConfig,
-  configRoutesToRouteManifest,
-} from "./routes";
-import { detectPackageManager } from "../cli/detectPackageManager";
+import { CharCode } from '../../../../base/common/charCode.js';
 
-const excludedConfigPresetKeys = ["presets"] as const satisfies ReadonlyArray<
-  keyof ReactRouterConfig
->;
-
-type ExcludedConfigPresetKey = (typeof excludedConfigPresetKeys)[number];
-
-type ConfigPreset = Omit<ReactRouterConfig, ExcludedConfigPresetKey>;
-
-export type Preset = {
-  name: string;
-  reactRouterConfig?: (args: {
-    reactRouterUserConfig: ReactRouterConfig;
-  }) => ConfigPreset | Promise<ConfigPreset>;
-  reactRouterConfigResolved?: (args: {
-    reactRouterConfig: ResolvedReactRouterConfig;
-  }) => void | Promise<void>;
-};
-
-// Only expose a subset of route properties to the "serverBundles" function
-const branchRouteProperties = [
-  "id",
-  "path",
-  "file",
-  "index",
-] as const satisfies ReadonlyArray<keyof RouteManifestEntry>;
-type BranchRoute = Pick<
-  RouteManifestEntry,
-  (typeof branchRouteProperties)[number]
->;
-
-export const configRouteToBranchRoute = (
-  configRoute: RouteManifestEntry,
-): BranchRoute => pick(configRoute, branchRouteProperties);
-
-export type ServerBundlesFunction = (args: {
-  branch: BranchRoute[];
-}) => string | Promise<string>;
-
-type BaseBuildManifest = {
-  routes: RouteManifest;
-};
-
-type DefaultBuildManifest = BaseBuildManifest & {
-  serverBundles?: never;
-  routeIdToServerBundleId?: never;
-};
-
-type ServerBundlesBuildManifest = BaseBuildManifest & {
-  serverBundles: {
-    [serverBundleId: string]: {
-      id: string;
-      file: string;
-    };
-  };
-  routeIdToServerBundleId: Record<string, string>;
-};
-
-type ServerModuleFormat = "esm" | "cjs";
-
-type ValidateConfigFunction = (config: ReactRouterConfig) => string | void;
-
-interface FutureConfig {
-  unstable_optimizeDeps: boolean;
-  unstable_subResourceIntegrity: boolean;
-  /**
-   * Enable route middleware
-   */
-  v8_middleware: boolean;
-  /**
-   * Automatically split route modules into multiple chunks when possible.
-   */
-  v8_splitRouteModules: boolean | "enforce";
-  /**
-   * Use Vite Environment API
-   */
-  v8_viteEnvironmentApi: boolean;
+export const enum TokenType {
+	Dollar,
+	Colon,
+	Comma,
+	CurlyOpen,
+	CurlyClose,
+	Backslash,
+	Forwardslash,
+	Pipe,
+	Int,
+	VariableName,
+	Format,
+	Plus,
+	Dash,
+	QuestionMark,
+	EOF
 }
 
-export type BuildManifest = DefaultBuildManifest | ServerBundlesBuildManifest;
-
-type BuildEndHook = (args: {
-  buildManifest: BuildManifest | undefined;
-  reactRouterConfig: ResolvedReactRouterConfig;
-  viteConfig: Vite.ResolvedConfig;
-}) => void | Promise<void>;
-
-export type PrerenderPaths =
-  | boolean
-  | Array<string>
-  | ((args: {
-      getStaticPaths: () => string[];
-    }) => Array<string> | Promise<Array<string>>);
-
-/**
- * Config to be exported via the default export from `react-router.config.ts`.
- */
-export type ReactRouterConfig = {
-  /**
-   * The path to the `app` directory, relative to the root directory. Defaults
-   * to `"app"`.
-   */
-  appDirectory?: string;
-
-  /**
-   * The output format of the server build. Defaults to "esm".
-   */
-  serverModuleFormat?: ServerModuleFormat;
-
-  /**
-   * Enabled future flags
-   */
-  future?: [keyof FutureConfig] extends [never]
-    ? // Partial<FutureConfig> doesn't work when it's empty so just prevent any keys
-      { [key: string]: never }
-    : Partial<FutureConfig>;
-
-  /**
-   * The React Router app basename.  Defaults to `"/"`.
-   */
-  basename?: string;
-  /**
-   * The path to the build directory, relative to the project. Defaults to
-   * `"build"`.
-   */
-  buildDirectory?: string;
-  /**
-   * A function that is called after the full React Router build is complete.
-   */
-  buildEnd?: BuildEndHook;
-  /**
-   * An array of URLs to prerender to HTML files at build time.  Can also be a
-   * function returning an array to dynamically generate URLs.
-   *
-   * `unstable_concurrency` defaults to 1, which means "no concurrency" - fully serial execution.
-   * Setting it to a value more than 1 enables concurrent prerendering.
-   * Setting it to a value higher than one can increase the speed of the build,
-   * but may consume more resources, and send more concurrent requests to the
-   * server/CMS.
-   */
-  prerender?:
-    | PrerenderPaths
-    | {
-        paths: PrerenderPaths;
-        unstable_concurrency?: number;
-      };
-  /**
-   * An array of React Router plugin config presets to ease integration with
-   * other platforms and tools.
-   */
-  presets?: Array<Preset>;
-  /**
-   * Control the "Lazy Route Discovery" behavior
-   *
-   * - `routeDiscovery.mode`: By default, this resolves to `lazy` which will
-   *   lazily discover routes as the user navigates around your application.
-   *   You can set this to `initial` to opt-out of this behavior and load all
-   *   routes with the initial HTML document load.
-   * - `routeDiscovery.manifestPath`: The path to serve the manifest file from.
-   *    Only applies to `mode: "lazy"` and defaults to `/__manifest`.
-   */
-  routeDiscovery?:
-    | {
-        mode: "lazy";
-        manifestPath?: string;
-      }
-    | {
-        mode: "initial";
-      };
-  /**
-   * The file name of the server build output. This file
-   * should end in a `.js` extension and should be deployed to your server.
-   * Defaults to `"index.js"`.
-   */
-  serverBuildFile?: string;
-  /**
-   * A function for assigning routes to different server bundles. This
-   * function should return a server bundle ID which will be used as the
-   * bundle's directory name within the server build directory.
-   */
-  serverBundles?: ServerBundlesFunction;
-  /**
-   * Enable server-side rendering for your application. Disable to use "SPA
-   * Mode", which will request the `/` path at build-time and save it as an
-   * `index.html` file with your assets so your application can be deployed as a
-   * SPA without server-rendering. Default's to `true`.
-   */
-  ssr?: boolean;
-};
-
-export type ResolvedReactRouterConfig = Readonly<{
-  /**
-   * The absolute path to the application source directory.
-   */
-  appDirectory: string;
-  /**
-   * The React Router app basename.  Defaults to `"/"`.
-   */
-  basename: string;
-  /**
-   * The absolute path to the build directory.
-   */
-  buildDirectory: string;
-  /**
-   * A function that is called after the full React Router build is complete.
-   */
-  buildEnd?: BuildEndHook;
-  /**
-   * Enabled future flags
-   */
-  future: FutureConfig;
-  /**
-   * An array of URLs to prerender to HTML files at build time.  Can also be a
-   * function returning an array to dynamically generate URLs.
-   */
-  prerender: ReactRouterConfig["prerender"];
-  /**
-   * Control the "Lazy Route Discovery" behavior
-   *
-   * - `routeDiscovery.mode`: By default, this resolves to `lazy` which will
-   *   lazily discover routes as the user navigates around your application.
-   *   You can set this to `initial` to opt-out of this behavior and load all
-   *   routes with the initial HTML document load.
-   * - `routeDiscovery.manifestPath`: The path to serve the manifest file from.
-   *    Only applies to `mode: "lazy"` and defaults to `/__manifest`.
-   */
-  routeDiscovery: ReactRouterConfig["routeDiscovery"];
-  /**
-   * An object of all available routes, keyed by route id.
-   */
-  routes: RouteManifest;
-  /**
-   * The file name of the server build output. This file
-   * should end in a `.js` extension and should be deployed to your server.
-   * Defaults to `"index.js"`.
-   */
-  serverBuildFile: string;
-  /**
-   * A function for assigning routes to different server bundles. This
-   * function should return a server bundle ID which will be used as the
-   * bundle's directory name within the server build directory.
-   */
-  serverBundles?: ServerBundlesFunction;
-  /**
-   * The output format of the server build. Defaults to "esm".
-   */
-  serverModuleFormat: ServerModuleFormat;
-  /**
-   * Enable server-side rendering for your application. Disable to use "SPA
-   * Mode", which will request the `/` path at build-time and save it as an
-   * `index.html` file with your assets so your application can be deployed as a
-   * SPA without server-rendering. Default's to `true`.
-   */
-  ssr: boolean;
-  /**
-   * The resolved array of route config entries exported from `routes.ts`
-   */
-  unstable_routeConfig: RouteConfigEntry[];
-}>;
-
-let mergeReactRouterConfig = (
-  ...configs: ReactRouterConfig[]
-): ReactRouterConfig => {
-  let reducer = (
-    configA: ReactRouterConfig,
-    configB: ReactRouterConfig,
-  ): ReactRouterConfig => {
-    let mergeRequired = (key: keyof ReactRouterConfig) =>
-      configA[key] !== undefined && configB[key] !== undefined;
-
-    return {
-      ...configA,
-      ...configB,
-      ...(mergeRequired("buildEnd")
-        ? {
-            buildEnd: async (...args) => {
-              await Promise.all([
-                configA.buildEnd?.(...args),
-                configB.buildEnd?.(...args),
-              ]);
-            },
-          }
-        : {}),
-      ...(mergeRequired("future")
-        ? {
-            future: {
-              ...configA.future,
-              ...configB.future,
-            },
-          }
-        : {}),
-      ...(mergeRequired("presets")
-        ? {
-            presets: [...(configA.presets ?? []), ...(configB.presets ?? [])],
-          }
-        : {}),
-    };
-  };
-
-  return configs.reduce(reducer, {});
-};
-
-// Inlined from https://github.com/jsdf/deep-freeze
-let deepFreeze = (o: any) => {
-  Object.freeze(o);
-  let oIsFunction = typeof o === "function";
-  let hasOwnProp = Object.prototype.hasOwnProperty;
-  Object.getOwnPropertyNames(o).forEach(function (prop) {
-    if (
-      hasOwnProp.call(o, prop) &&
-      (oIsFunction
-        ? prop !== "caller" && prop !== "callee" && prop !== "arguments"
-        : true) &&
-      o[prop] !== null &&
-      (typeof o[prop] === "object" || typeof o[prop] === "function") &&
-      !Object.isFrozen(o[prop])
-    ) {
-      deepFreeze(o[prop]);
-    }
-  });
-  return o;
-};
-
-type Result<T> =
-  | {
-      ok: true;
-      value: T;
-      error?: undefined;
-    }
-  | {
-      ok: false;
-      value?: undefined;
-      error: string;
-    };
-
-type ConfigResult = Result<ResolvedReactRouterConfig>;
-
-function ok<T>(value: T): Result<T> {
-  return { ok: true, value };
+export interface Token {
+	type: TokenType;
+	pos: number;
+	len: number;
 }
 
-function err<T>(error: string): Result<T> {
-  return { ok: false, error };
+
+export class Scanner {
+
+	private static _table: { [ch: number]: TokenType } = {
+		[CharCode.DollarSign]: TokenType.Dollar,
+		[CharCode.Colon]: TokenType.Colon,
+		[CharCode.Comma]: TokenType.Comma,
+		[CharCode.OpenCurlyBrace]: TokenType.CurlyOpen,
+		[CharCode.CloseCurlyBrace]: TokenType.CurlyClose,
+		[CharCode.Backslash]: TokenType.Backslash,
+		[CharCode.Slash]: TokenType.Forwardslash,
+		[CharCode.Pipe]: TokenType.Pipe,
+		[CharCode.Plus]: TokenType.Plus,
+		[CharCode.Dash]: TokenType.Dash,
+		[CharCode.QuestionMark]: TokenType.QuestionMark,
+	};
+
+	static isDigitCharacter(ch: number): boolean {
+		return ch >= CharCode.Digit0 && ch <= CharCode.Digit9;
+	}
+
+	static isVariableCharacter(ch: number): boolean {
+		return ch === CharCode.Underline
+			|| (ch >= CharCode.a && ch <= CharCode.z)
+			|| (ch >= CharCode.A && ch <= CharCode.Z);
+	}
+
+	value: string = '';
+	pos: number = 0;
+
+	text(value: string) {
+		this.value = value;
+		this.pos = 0;
+	}
+
+	tokenText(token: Token): string {
+		return this.value.substr(token.pos, token.len);
+	}
+
+	next(): Token {
+
+		if (this.pos >= this.value.length) {
+			return { type: TokenType.EOF, pos: this.pos, len: 0 };
+		}
+
+		const pos = this.pos;
+		let len = 0;
+		let ch = this.value.charCodeAt(pos);
+		let type: TokenType;
+
+		// static types
+		type = Scanner._table[ch];
+		if (typeof type === 'number') {
+			this.pos += 1;
+			return { type, pos, len: 1 };
+		}
+
+		// number
+		if (Scanner.isDigitCharacter(ch)) {
+			type = TokenType.Int;
+			do {
+				len += 1;
+				ch = this.value.charCodeAt(pos + len);
+			} while (Scanner.isDigitCharacter(ch));
+
+			this.pos += len;
+			return { type, pos, len };
+		}
+
+		// variable name
+		if (Scanner.isVariableCharacter(ch)) {
+			type = TokenType.VariableName;
+			do {
+				ch = this.value.charCodeAt(pos + (++len));
+			} while (Scanner.isVariableCharacter(ch) || Scanner.isDigitCharacter(ch));
+
+			this.pos += len;
+			return { type, pos, len };
+		}
+
+
+		// format
+		type = TokenType.Format;
+		do {
+			len += 1;
+			ch = this.value.charCodeAt(pos + len);
+		} while (
+			!isNaN(ch)
+			&& typeof Scanner._table[ch] === 'undefined' // not static token
+			&& !Scanner.isDigitCharacter(ch) // not number
+			&& !Scanner.isVariableCharacter(ch) // not variable
+		);
+
+		this.pos += len;
+		return { type, pos, len };
+	}
 }
 
-async function resolveConfig({
-  root,
-  viteNodeContext,
-  reactRouterConfigFile,
-  skipRoutes,
-  validateConfig,
-}: {
-  root: string;
-  viteNodeContext: ViteNode.Context;
-  reactRouterConfigFile?: string;
-  skipRoutes?: boolean;
-  validateConfig?: ValidateConfigFunction;
-}): Promise<ConfigResult> {
-  let reactRouterUserConfig: ReactRouterConfig = {};
+export abstract class Marker {
 
-  if (reactRouterConfigFile) {
-    try {
-      if (!fs.existsSync(reactRouterConfigFile)) {
-        return err(`${reactRouterConfigFile} no longer exists`);
-      }
+	readonly _markerBrand: undefined;
 
-      let configModule = await viteNodeContext.runner.executeFile(
-        reactRouterConfigFile,
-      );
+	public parent!: Marker;
+	protected _children: Marker[] = [];
 
-      if (configModule.default === undefined) {
-        return err(`${reactRouterConfigFile} must provide a default export`);
-      }
+	appendChild(child: Marker): this {
+		if (child instanceof Text && this._children[this._children.length - 1] instanceof Text) {
+			// this and previous child are text -> merge them
+			(<Text>this._children[this._children.length - 1]).value += child.value;
+		} else {
+			// normal adoption of child
+			child.parent = this;
+			this._children.push(child);
+		}
+		return this;
+	}
 
-      if (typeof configModule.default !== "object") {
-        return err(`${reactRouterConfigFile} must export a config`);
-      }
+	replace(child: Marker, others: Marker[]): void {
+		const { parent } = child;
+		const idx = parent.children.indexOf(child);
+		const newChildren = parent.children.slice(0);
+		newChildren.splice(idx, 1, ...others);
+		parent._children = newChildren;
 
-      reactRouterUserConfig = configModule.default;
+		(function _fixParent(children: Marker[], parent: Marker) {
+			for (const child of children) {
+				child.parent = parent;
+				_fixParent(child.children, child);
+			}
+		})(others, parent);
+	}
 
-      if (validateConfig) {
-        const error = validateConfig(reactRouterUserConfig);
-        if (error) {
-          return err(error);
-        }
-      }
-    } catch (error) {
-      return err(`Error loading ${reactRouterConfigFile}: ${error}`);
-    }
-  }
+	get children(): Marker[] {
+		return this._children;
+	}
 
-  // Prevent mutations to the user config
-  reactRouterUserConfig = deepFreeze(cloneDeep(reactRouterUserConfig));
+	get rightMostDescendant(): Marker {
+		if (this._children.length > 0) {
+			return this._children[this._children.length - 1].rightMostDescendant;
+		}
+		return this;
+	}
 
-  let presets: ReactRouterConfig[] = (
-    await Promise.all(
-      (reactRouterUserConfig.presets ?? []).map(async (preset) => {
-        if (!preset.name) {
-          throw new Error(
-            "React Router presets must have a `name` property defined.",
-          );
-        }
+	get snippet(): TextmateSnippet | undefined {
+		let candidate: Marker = this;
+		while (true) {
+			if (!candidate) {
+				return undefined;
+			}
+			if (candidate instanceof TextmateSnippet) {
+				return candidate;
+			}
+			candidate = candidate.parent;
+		}
+	}
 
-        if (!preset.reactRouterConfig) {
-          return null;
-        }
+	toString(): string {
+		return this.children.reduce((prev, cur) => prev + cur.toString(), '');
+	}
 
-        let configPreset: ReactRouterConfig = omit(
-          await preset.reactRouterConfig({ reactRouterUserConfig }),
-          excludedConfigPresetKeys,
-        );
+	abstract toTextmateString(): string;
 
-        return configPreset;
-      }),
-    )
-  ).filter(function isNotNull<T>(value: T | null): value is T {
-    return value !== null;
-  });
+	len(): number {
+		return 0;
+	}
 
-  let defaults = {
-    basename: "/",
-    buildDirectory: "build",
-    serverBuildFile: "index.js",
-    serverModuleFormat: "esm",
-    ssr: true,
-  } as const satisfies Partial<ReactRouterConfig>;
-
-  let userAndPresetConfigs = mergeReactRouterConfig(
-    ...presets,
-    reactRouterUserConfig,
-  );
-
-  let {
-    appDirectory: userAppDirectory,
-    basename,
-    buildDirectory: userBuildDirectory,
-    buildEnd,
-    prerender,
-    routeDiscovery: userRouteDiscovery,
-    serverBuildFile,
-    serverBundles,
-    serverModuleFormat,
-    ssr,
-  } = {
-    ...defaults, // Default values should be completely overridden by user/preset config, not merged
-    ...userAndPresetConfigs,
-  };
-
-  if (!ssr && serverBundles) {
-    serverBundles = undefined;
-  }
-
-  if (prerender) {
-    let isValidPrerenderPathsConfig = (p: unknown) =>
-      typeof p === "boolean" || typeof p === "function" || Array.isArray(p);
-
-    let isValidPrerenderConfig =
-      isValidPrerenderPathsConfig(prerender) ||
-      (typeof prerender === "object" &&
-        "paths" in prerender &&
-        isValidPrerenderPathsConfig(prerender.paths));
-
-    if (!isValidPrerenderConfig) {
-      return err(
-        "The `prerender`/`prerender.paths` config must be a boolean, an array " +
-          "of string paths, or a function returning a boolean or array of string paths.",
-      );
-    }
-
-    let isValidConcurrencyConfig =
-      typeof prerender != "object" ||
-      !("unstable_concurrency" in prerender) ||
-      (typeof prerender.unstable_concurrency === "number" &&
-        Number.isInteger(prerender.unstable_concurrency) &&
-        prerender.unstable_concurrency > 0);
-
-    if (!isValidConcurrencyConfig) {
-      return err(
-        "The `prerender.unstable_concurrency` config must be a positive integer if specified.",
-      );
-    }
-  }
-
-  let routeDiscovery: ResolvedReactRouterConfig["routeDiscovery"];
-  if (userRouteDiscovery == null) {
-    if (ssr) {
-      routeDiscovery = {
-        mode: "lazy",
-        manifestPath: "/__manifest",
-      };
-    } else {
-      routeDiscovery = { mode: "initial" };
-    }
-  } else if (userRouteDiscovery.mode === "initial") {
-    routeDiscovery = userRouteDiscovery;
-  } else if (userRouteDiscovery.mode === "lazy") {
-    if (!ssr) {
-      return err(
-        'The `routeDiscovery.mode` config cannot be set to "lazy" when setting `ssr:false`',
-      );
-    }
-
-    let { manifestPath } = userRouteDiscovery;
-    if (manifestPath != null && !manifestPath.startsWith("/")) {
-      return err(
-        "The `routeDiscovery.manifestPath` config must be a root-relative " +
-          'pathname beginning with a slash (i.e., "/__manifest")',
-      );
-    }
-
-    routeDiscovery = userRouteDiscovery;
-  }
-
-  let appDirectory = Path.resolve(root, userAppDirectory || "app");
-  let buildDirectory = Path.resolve(root, userBuildDirectory);
-
-  let rootRouteFile = findEntry(appDirectory, "root", { absolute: true });
-  if (!rootRouteFile) {
-    let rootRouteDisplayPath = Path.relative(
-      root,
-      Path.join(appDirectory, "root.tsx"),
-    );
-    return err(
-      `Could not find a root route module in the app directory as "${rootRouteDisplayPath}"`,
-    );
-  }
-
-  let routes: RouteManifest;
-  let routeConfig: RouteConfigEntry[] = [];
-
-  if (skipRoutes) {
-    routes = {};
-  } else {
-    let routeConfigFile = findEntry(appDirectory, "routes");
-
-    try {
-      if (!routeConfigFile) {
-        let routeConfigDisplayPath = Path.relative(
-          root,
-          Path.join(appDirectory, "routes.ts"),
-        );
-        return err(
-          `Route config file not found at "${routeConfigDisplayPath}".`,
-        );
-      }
-
-      setAppDirectory(appDirectory);
-      let routeConfigExport = (
-        await viteNodeContext.runner.executeFile(
-          Path.join(appDirectory, routeConfigFile),
-        )
-      ).default;
-      let result = validateRouteConfig({
-        routeConfigFile,
-        routeConfig: await routeConfigExport,
-      });
-
-      if (!result.valid) {
-        return err(result.message);
-      }
-
-      // Nest the route config under the resolved root route
-      routeConfig = [
-        {
-          id: "root",
-          path: "",
-          file: Path.relative(appDirectory, rootRouteFile),
-          children: result.routeConfig,
-        },
-      ];
-
-      routes = configRoutesToRouteManifest(appDirectory, routeConfig);
-    } catch (error: any) {
-      return err(
-        [
-          colors.red(`Route config in "${routeConfigFile}" is invalid.`),
-          "",
-          error.loc?.file && error.loc?.column && error.frame
-            ? [
-                Path.relative(appDirectory, error.loc.file) +
-                  ":" +
-                  error.loc.line +
-                  ":" +
-                  error.loc.column,
-                error.frame.trim?.(),
-              ]
-            : error.stack,
-        ]
-          .flat()
-          .join("\n"),
-      );
-    }
-  }
-
-  // Check for renamed flags and provide helpful error messages
-  let futureConfig = userAndPresetConfigs.future as any;
-  if (futureConfig?.unstable_splitRouteModules !== undefined) {
-    return err(
-      'The "future.unstable_splitRouteModules" flag has been stabilized as "future.v8_splitRouteModules"',
-    );
-  }
-  if (futureConfig?.unstable_viteEnvironmentApi !== undefined) {
-    return err(
-      'The "future.unstable_viteEnvironmentApi" flag has been stabilized as "future.v8_viteEnvironmentApi"',
-    );
-  }
-
-  let future: FutureConfig = {
-    unstable_optimizeDeps:
-      userAndPresetConfigs.future?.unstable_optimizeDeps ?? false,
-    unstable_subResourceIntegrity:
-      userAndPresetConfigs.future?.unstable_subResourceIntegrity ?? false,
-    v8_middleware: userAndPresetConfigs.future?.v8_middleware ?? false,
-    v8_splitRouteModules:
-      userAndPresetConfigs.future?.v8_splitRouteModules ?? false,
-    v8_viteEnvironmentApi:
-      userAndPresetConfigs.future?.v8_viteEnvironmentApi ?? false,
-  };
-
-  let reactRouterConfig: ResolvedReactRouterConfig = deepFreeze({
-    appDirectory,
-    basename,
-    buildDirectory,
-    buildEnd,
-    future,
-    prerender,
-    routes,
-    routeDiscovery,
-    serverBuildFile,
-    serverBundles,
-    serverModuleFormat,
-    ssr,
-    unstable_routeConfig: routeConfig,
-  } satisfies ResolvedReactRouterConfig);
-
-  for (let preset of reactRouterUserConfig.presets ?? []) {
-    await preset.reactRouterConfigResolved?.({ reactRouterConfig });
-  }
-
-  return ok(reactRouterConfig);
+	abstract clone(): Marker;
 }
 
-type ChokidarEventName = ChokidarEmitArgs[0];
+export class Text extends Marker {
 
-type ChangeHandler = (args: {
-  result: ConfigResult;
-  configCodeChanged: boolean;
-  routeConfigCodeChanged: boolean;
-  configChanged: boolean;
-  routeConfigChanged: boolean;
-  path: string;
-  event: ChokidarEventName;
-}) => void;
+	static escape(value: string): string {
+		return value.replace(/\$|}|\\/g, '\\$&');
+	}
 
-export type ConfigLoader = {
-  getConfig: () => Promise<ConfigResult>;
-  onChange: (handler: ChangeHandler) => () => void;
-  close: () => Promise<void>;
-};
-
-export async function createConfigLoader({
-  rootDirectory: root,
-  watch,
-  mode,
-  skipRoutes,
-  validateConfig,
-}: {
-  watch: boolean;
-  rootDirectory?: string;
-  mode: string;
-  skipRoutes?: boolean;
-  validateConfig?: ValidateConfigFunction;
-}): Promise<ConfigLoader> {
-  root = Path.normalize(root ?? process.env.REACT_ROUTER_ROOT ?? process.cwd());
-
-  let vite = await import("vite");
-  let viteNodeContext = await ViteNode.createContext({
-    root,
-    mode,
-    // Filter out any info level logs from vite-node
-    customLogger: vite.createLogger("warn", {
-      prefix: "[react-router]",
-    }),
-  });
-
-  let reactRouterConfigFile: string | undefined;
-
-  let updateReactRouterConfigFile = () => {
-    reactRouterConfigFile = findEntry(root, "react-router.config", {
-      absolute: true,
-    });
-  };
-
-  updateReactRouterConfigFile();
-
-  let getConfig = () =>
-    resolveConfig({
-      root,
-      viteNodeContext,
-      reactRouterConfigFile,
-      skipRoutes,
-      validateConfig,
-    });
-
-  let appDirectory: string;
-
-  let initialConfigResult = await getConfig();
-
-  if (!initialConfigResult.ok) {
-    throw new Error(initialConfigResult.error);
-  }
-
-  appDirectory = Path.normalize(initialConfigResult.value.appDirectory);
-
-  let currentConfig = initialConfigResult.value;
-
-  let fsWatcher: FSWatcher | undefined;
-  let changeHandlers: ChangeHandler[] = [];
-
-  return {
-    getConfig,
-    onChange: (handler: ChangeHandler) => {
-      if (!watch) {
-        throw new Error(
-          "onChange is not supported when watch mode is disabled",
-        );
-      }
-
-      changeHandlers.push(handler);
-
-      if (!fsWatcher) {
-        fsWatcher = chokidar.watch([root, appDirectory], {
-          ignoreInitial: true,
-          ignored: (path) => {
-            let dirname = Path.dirname(path);
-
-            return (
-              !dirname.startsWith(appDirectory) &&
-              // Ensure we're only watching files outside of the app directory
-              // that are at the root level, not nested in subdirectories
-              path !== root && // Watch the root directory itself
-              dirname !== root // Watch files at the root level
-            );
-          },
-        });
-
-        fsWatcher.on("all", async (...args) => {
-          let [event, rawFilepath] = args;
-          let filepath = Path.normalize(rawFilepath);
-
-          let fileAddedOrRemoved = event === "add" || event === "unlink";
-
-          let appFileAddedOrRemoved =
-            fileAddedOrRemoved &&
-            filepath.startsWith(Path.normalize(appDirectory));
-
-          let rootRelativeFilepath = Path.relative(root, filepath);
-
-          let configFileAddedOrRemoved =
-            fileAddedOrRemoved &&
-            isEntryFile("react-router.config", rootRelativeFilepath);
-
-          if (configFileAddedOrRemoved) {
-            updateReactRouterConfigFile();
-          }
-
-          let moduleGraphChanged =
-            configFileAddedOrRemoved ||
-            Boolean(
-              viteNodeContext.devServer?.moduleGraph.getModuleById(filepath),
-            );
-
-          // Bail out if no relevant changes detected
-          if (!moduleGraphChanged && !appFileAddedOrRemoved) {
-            return;
-          }
-
-          viteNodeContext.devServer?.moduleGraph.invalidateAll();
-          viteNodeContext.runner?.moduleCache.clear();
-
-          let result = await getConfig();
-
-          let prevAppDirectory = appDirectory;
-          appDirectory = Path.normalize(
-            (result.value ?? currentConfig).appDirectory,
-          );
-
-          if (appDirectory !== prevAppDirectory) {
-            fsWatcher!.unwatch(prevAppDirectory);
-            fsWatcher!.add(appDirectory);
-          }
-
-          let configCodeChanged =
-            configFileAddedOrRemoved ||
-            (reactRouterConfigFile !== undefined &&
-              isEntryFileDependency(
-                viteNodeContext.devServer.moduleGraph,
-                reactRouterConfigFile,
-                filepath,
-              ));
-
-          let routeConfigFile = !skipRoutes
-            ? findEntry(appDirectory, "routes", {
-                absolute: true,
-              })
-            : undefined;
-          let routeConfigCodeChanged =
-            routeConfigFile !== undefined &&
-            isEntryFileDependency(
-              viteNodeContext.devServer.moduleGraph,
-              routeConfigFile,
-              filepath,
-            );
-
-          let configChanged =
-            result.ok &&
-            !isEqual(omitRoutes(currentConfig), omitRoutes(result.value));
-
-          let routeConfigChanged =
-            result.ok && !isEqual(currentConfig?.routes, result.value.routes);
-
-          for (let handler of changeHandlers) {
-            handler({
-              result,
-              configCodeChanged,
-              routeConfigCodeChanged,
-              configChanged,
-              routeConfigChanged,
-              path: filepath,
-              event,
-            });
-          }
-
-          if (result.ok) {
-            currentConfig = result.value;
-          }
-        });
-      }
-
-      return () => {
-        changeHandlers = changeHandlers.filter(
-          (changeHandler) => changeHandler !== handler,
-        );
-      };
-    },
-    close: async () => {
-      changeHandlers = [];
-      await viteNodeContext.devServer.close();
-      await fsWatcher?.close();
-    },
-  };
+	constructor(public value: string) {
+		super();
+	}
+	override toString() {
+		return this.value;
+	}
+	toTextmateString(): string {
+		return Text.escape(this.value);
+	}
+	override len(): number {
+		return this.value.length;
+	}
+	clone(): Text {
+		return new Text(this.value);
+	}
 }
 
-export async function loadConfig({
-  rootDirectory,
-  mode,
-  skipRoutes,
-}: {
-  rootDirectory: string;
-  mode: string;
-  skipRoutes?: boolean;
-}) {
-  let configLoader = await createConfigLoader({
-    rootDirectory,
-    mode,
-    skipRoutes,
-    watch: false,
-  });
-  let config = await configLoader.getConfig();
-  await configLoader.close();
-  return config;
+export abstract class TransformableMarker extends Marker {
+	public transform?: Transform;
 }
 
-export async function resolveEntryFiles({
-  rootDirectory,
-  reactRouterConfig,
-}: {
-  rootDirectory: string;
-  reactRouterConfig: ResolvedReactRouterConfig;
-}) {
-  let { appDirectory } = reactRouterConfig;
+export class Placeholder extends TransformableMarker {
+	static compareByIndex(a: Placeholder, b: Placeholder): number {
+		if (a.index === b.index) {
+			return 0;
+		} else if (a.isFinalTabstop) {
+			return 1;
+		} else if (b.isFinalTabstop) {
+			return -1;
+		} else if (a.index < b.index) {
+			return -1;
+		} else if (a.index > b.index) {
+			return 1;
+		} else {
+			return 0;
+		}
+	}
 
-  let defaultsDirectory = Path.resolve(
-    Path.dirname(require.resolve("@react-router/dev/package.json")),
-    "dist",
-    "config",
-    "defaults",
-  );
+	constructor(public index: number) {
+		super();
+	}
 
-  let userEntryClientFile = findEntry(appDirectory, "entry.client");
-  let userEntryServerFile = findEntry(appDirectory, "entry.server");
+	get isFinalTabstop() {
+		return this.index === 0;
+	}
 
-  let entryServerFile: string;
-  let entryClientFile = userEntryClientFile || "entry.client.tsx";
+	get choice(): Choice | undefined {
+		return this._children.length === 1 && this._children[0] instanceof Choice
+			? this._children[0]
+			: undefined;
+	}
 
-  if (userEntryServerFile) {
-    entryServerFile = userEntryServerFile;
-  } else {
-    let packageJsonPath = findEntry(rootDirectory, "package", {
-      extensions: [".json"],
-      absolute: true,
-      walkParents: true,
-    });
+	toTextmateString(): string {
+		let transformString = '';
+		if (this.transform) {
+			transformString = this.transform.toTextmateString();
+		}
+		if (this.children.length === 0 && !this.transform) {
+			return `\$${this.index}`;
+		} else if (this.children.length === 0) {
+			return `\${${this.index}${transformString}}`;
+		} else if (this.choice) {
+			return `\${${this.index}|${this.choice.toTextmateString()}|${transformString}}`;
+		} else {
+			return `\${${this.index}:${this.children.map(child => child.toTextmateString()).join('')}${transformString}}`;
+		}
+	}
 
-    if (!packageJsonPath) {
-      throw new Error(
-        `Could not find package.json in ${rootDirectory} or any of its parent directories. Please add a package.json, or provide a custom entry.server.tsx/jsx file in your app directory.`,
-      );
-    }
-
-    let packageJsonDirectory = Path.dirname(packageJsonPath);
-    let pkgJson = await readPackageJSON(packageJsonDirectory);
-    let deps = pkgJson.dependencies ?? {};
-
-    if (!deps["@react-router/node"]) {
-      throw new Error(
-        `Could not determine server runtime. Please install @react-router/node, or provide a custom entry.server.tsx/jsx file in your app directory.`,
-      );
-    }
-
-    if (!deps["isbot"]) {
-      console.log(
-        "adding `isbot@5` to your package.json, you should commit this change",
-      );
-
-      await updatePackage(packageJsonPath, (pkg) => {
-        pkg.dependencies ??= {};
-        pkg.dependencies.isbot = "^5";
-        sortPackage(pkg);
-      });
-
-      let packageManager = detectPackageManager() ?? "npm";
-
-      execSync(`${packageManager} install`, {
-        cwd: packageJsonDirectory,
-        stdio: "inherit",
-      });
-    }
-
-    entryServerFile = `entry.server.node.tsx`;
-  }
-
-  let entryClientFilePath = userEntryClientFile
-    ? Path.resolve(reactRouterConfig.appDirectory, userEntryClientFile)
-    : Path.resolve(defaultsDirectory, entryClientFile);
-
-  let entryServerFilePath = userEntryServerFile
-    ? Path.resolve(reactRouterConfig.appDirectory, userEntryServerFile)
-    : Path.resolve(defaultsDirectory, entryServerFile);
-
-  return { entryClientFilePath, entryServerFilePath };
+	clone(): Placeholder {
+		const ret = new Placeholder(this.index);
+		if (this.transform) {
+			ret.transform = this.transform.clone();
+		}
+		ret._children = this.children.map(child => child.clone());
+		return ret;
+	}
 }
 
-function omitRoutes(
-  config: ResolvedReactRouterConfig,
-): ResolvedReactRouterConfig {
-  return {
-    ...config,
-    routes: {},
-  };
+export class Choice extends Marker {
+
+	readonly options: Text[] = [];
+
+	override appendChild(marker: Marker): this {
+		if (marker instanceof Text) {
+			marker.parent = this;
+			this.options.push(marker);
+		}
+		return this;
+	}
+
+	override toString() {
+		return this.options[0].value;
+	}
+
+	toTextmateString(): string {
+		return this.options
+			.map(option => option.value.replace(/\||,|\\/g, '\\$&'))
+			.join(',');
+	}
+
+	override len(): number {
+		return this.options[0].len();
+	}
+
+	clone(): Choice {
+		const ret = new Choice();
+		this.options.forEach(ret.appendChild, ret);
+		return ret;
+	}
 }
 
-const entryExts = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".mts"];
+export class Transform extends Marker {
 
-function isEntryFile(entryBasename: string, filename: string) {
-  return entryExts.some((ext) => filename === `${entryBasename}${ext}`);
+	regexp: RegExp = new RegExp('');
+
+	resolve(value: string): string {
+		const _this = this;
+		let didMatch = false;
+		let ret = value.replace(this.regexp, function () {
+			didMatch = true;
+			return _this._replace(Array.prototype.slice.call(arguments, 0, -2));
+		});
+		// when the regex didn't match and when the transform has
+		// else branches, then run those
+		if (!didMatch && this._children.some(child => child instanceof FormatString && Boolean(child.elseValue))) {
+			ret = this._replace([]);
+		}
+		return ret;
+	}
+
+	private _replace(groups: string[]): string {
+		let ret = '';
+		for (const marker of this._children) {
+			if (marker instanceof FormatString) {
+				let value = groups[marker.index] || '';
+				value = marker.resolve(value);
+				ret += value;
+			} else {
+				ret += marker.toString();
+			}
+		}
+		return ret;
+	}
+
+	override toString(): string {
+		return '';
+	}
+
+	toTextmateString(): string {
+		return `/${this.regexp.source}/${this.children.map(c => c.toTextmateString())}/${(this.regexp.ignoreCase ? 'i' : '') + (this.regexp.global ? 'g' : '')}`;
+	}
+
+	clone(): Transform {
+		const ret = new Transform();
+		ret.regexp = new RegExp(this.regexp.source, '' + (this.regexp.ignoreCase ? 'i' : '') + (this.regexp.global ? 'g' : ''));
+		ret._children = this.children.map(child => child.clone());
+		return ret;
+	}
+
 }
 
-function findEntry(
-  dir: string,
-  basename: string,
-  options?: {
-    absolute?: boolean;
-    extensions?: string[];
-    walkParents?: boolean;
-  },
-): string | undefined {
-  let currentDir = Path.resolve(dir);
-  let { root } = Path.parse(currentDir);
+export class FormatString extends Marker {
 
-  while (true) {
-    for (let ext of options?.extensions ?? entryExts) {
-      let file = Path.resolve(currentDir, basename + ext);
-      if (fs.existsSync(file)) {
-        return (options?.absolute ?? false) ? file : Path.relative(dir, file);
-      }
-    }
+	constructor(
+		readonly index: number,
+		readonly shorthandName?: string,
+		readonly ifValue?: string,
+		readonly elseValue?: string,
+	) {
+		super();
+	}
 
-    if (!options?.walkParents) {
-      return undefined;
-    }
+	resolve(value?: string): string {
+		if (this.shorthandName === 'upcase') {
+			return !value ? '' : value.toLocaleUpperCase();
+		} else if (this.shorthandName === 'downcase') {
+			return !value ? '' : value.toLocaleLowerCase();
+		} else if (this.shorthandName === 'capitalize') {
+			return !value ? '' : (value[0].toLocaleUpperCase() + value.substr(1));
+		} else if (this.shorthandName === 'pascalcase') {
+			return !value ? '' : this._toPascalCase(value);
+		} else if (this.shorthandName === 'camelcase') {
+			return !value ? '' : this._toCamelCase(value);
+		} else if (Boolean(value) && typeof this.ifValue === 'string') {
+			return this.ifValue;
+		} else if (!Boolean(value) && typeof this.elseValue === 'string') {
+			return this.elseValue;
+		} else {
+			return value || '';
+		}
+	}
 
-    let parentDir = Path.dirname(currentDir);
-    // Break out when we've reached the root directory or we're about to get
-    // stuck in a loop where `path.dirname` keeps returning "/"
-    if (currentDir === root || parentDir === currentDir) {
-      return undefined;
-    }
+	private _toPascalCase(value: string): string {
+		const match = value.match(/[a-z0-9]+/gi);
+		if (!match) {
+			return value;
+		}
+		return match.map(word => {
+			return word.charAt(0).toUpperCase() + word.substr(1);
+		})
+			.join('');
+	}
 
-    currentDir = parentDir;
-  }
+	private _toCamelCase(value: string): string {
+		const match = value.match(/[a-z0-9]+/gi);
+		if (!match) {
+			return value;
+		}
+		return match.map((word, index) => {
+			if (index === 0) {
+				return word.charAt(0).toLowerCase() + word.substr(1);
+			}
+			return word.charAt(0).toUpperCase() + word.substr(1);
+		})
+			.join('');
+	}
+
+	toTextmateString(): string {
+		let value = '${';
+		value += this.index;
+		if (this.shorthandName) {
+			value += `:/${this.shorthandName}`;
+
+		} else if (this.ifValue && this.elseValue) {
+			value += `:?${this.ifValue}:${this.elseValue}`;
+		} else if (this.ifValue) {
+			value += `:+${this.ifValue}`;
+		} else if (this.elseValue) {
+			value += `:-${this.elseValue}`;
+		}
+		value += '}';
+		return value;
+	}
+
+	clone(): FormatString {
+		const ret = new FormatString(this.index, this.shorthandName, this.ifValue, this.elseValue);
+		return ret;
+	}
 }
 
-function isEntryFileDependency(
-  moduleGraph: Vite.ModuleGraph,
-  entryFilepath: string,
-  filepath: string,
-  visited = new Set<string>(),
-): boolean {
-  // Ensure normalized paths
-  entryFilepath = Path.normalize(entryFilepath);
-  filepath = Path.normalize(filepath);
+export class Variable extends TransformableMarker {
 
-  if (visited.has(filepath)) {
-    return false;
-  }
+	constructor(public name: string) {
+		super();
+	}
 
-  visited.add(filepath);
+	resolve(resolver: VariableResolver): boolean {
+		let value = resolver.resolve(this);
+		if (this.transform) {
+			value = this.transform.resolve(value || '');
+		}
+		if (value !== undefined) {
+			this._children = [new Text(value)];
+			return true;
+		}
+		return false;
+	}
 
-  if (filepath === entryFilepath) {
-    return true;
-  }
+	toTextmateString(): string {
+		let transformString = '';
+		if (this.transform) {
+			transformString = this.transform.toTextmateString();
+		}
+		if (this.children.length === 0) {
+			return `\${${this.name}${transformString}}`;
+		} else {
+			return `\${${this.name}:${this.children.map(child => child.toTextmateString()).join('')}${transformString}}`;
+		}
+	}
 
-  let mod = moduleGraph.getModuleById(filepath);
+	clone(): Variable {
+		const ret = new Variable(this.name);
+		if (this.transform) {
+			ret.transform = this.transform.clone();
+		}
+		ret._children = this.children.map(child => child.clone());
+		return ret;
+	}
+}
 
-  if (!mod) {
-    return false;
-  }
+export interface VariableResolver {
+	resolve(variable: Variable): string | undefined;
+}
 
-  // Recursively check all importers to see if any of them are the entry file
-  for (let importer of mod.importers) {
-    if (!importer.id) {
-      continue;
-    }
+function walk(marker: Marker[], visitor: (marker: Marker) => boolean): void {
+	const stack = [...marker];
+	while (stack.length > 0) {
+		const marker = stack.shift()!;
+		const recurse = visitor(marker);
+		if (!recurse) {
+			break;
+		}
+		stack.unshift(...marker.children);
+	}
+}
 
-    if (
-      importer.id === entryFilepath ||
-      isEntryFileDependency(moduleGraph, entryFilepath, importer.id, visited)
-    ) {
-      return true;
-    }
-  }
+export class TextmateSnippet extends Marker {
 
-  return false;
+	private _placeholders?: { all: Placeholder[]; last?: Placeholder };
+
+	get placeholderInfo() {
+		if (!this._placeholders) {
+			// fill in placeholders
+			const all: Placeholder[] = [];
+			let last: Placeholder | undefined;
+			this.walk(function (candidate) {
+				if (candidate instanceof Placeholder) {
+					all.push(candidate);
+					last = !last || last.index < candidate.index ? candidate : last;
+				}
+				return true;
+			});
+			this._placeholders = { all, last };
+		}
+		return this._placeholders;
+	}
+
+	get placeholders(): Placeholder[] {
+		const { all } = this.placeholderInfo;
+		return all;
+	}
+
+	offset(marker: Marker): number {
+		let pos = 0;
+		let found = false;
+		this.walk(candidate => {
+			if (candidate === marker) {
+				found = true;
+				return false;
+			}
+			pos += candidate.len();
+			return true;
+		});
+
+		if (!found) {
+			return -1;
+		}
+		return pos;
+	}
+
+	fullLen(marker: Marker): number {
+		let ret = 0;
+		walk([marker], marker => {
+			ret += marker.len();
+			return true;
+		});
+		return ret;
+	}
+
+	enclosingPlaceholders(placeholder: Placeholder): Placeholder[] {
+		const ret: Placeholder[] = [];
+		let { parent } = placeholder;
+		while (parent) {
+			if (parent instanceof Placeholder) {
+				ret.push(parent);
+			}
+			parent = parent.parent;
+		}
+		return ret;
+	}
+
+	resolveVariables(resolver: VariableResolver): this {
+		this.walk(candidate => {
+			if (candidate instanceof Variable) {
+				if (candidate.resolve(resolver)) {
+					this._placeholders = undefined;
+				}
+			}
+			return true;
+		});
+		return this;
+	}
+
+	override appendChild(child: Marker) {
+		this._placeholders = undefined;
+		return super.appendChild(child);
+	}
+
+	override replace(child: Marker, others: Marker[]): void {
+		this._placeholders = undefined;
+		return super.replace(child, others);
+	}
+
+	toTextmateString(): string {
+		return this.children.reduce((prev, cur) => prev + cur.toTextmateString(), '');
+	}
+
+	clone(): TextmateSnippet {
+		const ret = new TextmateSnippet();
+		this._children = this.children.map(child => child.clone());
+		return ret;
+	}
+
+	walk(visitor: (marker: Marker) => boolean): void {
+		walk(this.children, visitor);
+	}
+}
+
+export class SnippetParser {
+
+	static escape(value: string): string {
+		return value.replace(/\$|}|\\/g, '\\$&');
+	}
+
+	/**
+	 * Takes a snippet and returns the insertable string, e.g return the snippet-string
+	 * without any placeholder, tabstop, variables etc...
+	 */
+	static asInsertText(value: string): string {
+		return new SnippetParser().parse(value).toString();
+	}
+
+	static guessNeedsClipboard(template: string): boolean {
+		return /\${?CLIPBOARD/.test(template);
+	}
+
+	private _scanner: Scanner = new Scanner();
+	private _token: Token = { type: TokenType.EOF, pos: 0, len: 0 };
+
+	parse(value: string, insertFinalTabstop?: boolean, enforceFinalTabstop?: boolean): TextmateSnippet {
+		const snippet = new TextmateSnippet();
+		this.parseFragment(value, snippet);
+		this.ensureFinalTabstop(snippet, enforceFinalTabstop ?? false, insertFinalTabstop ?? false);
+		return snippet;
+	}
+
+	parseFragment(value: string, snippet: TextmateSnippet): readonly Marker[] {
+
+		const offset = snippet.children.length;
+		this._scanner.text(value);
+		this._token = this._scanner.next();
+		while (this._parse(snippet)) {
+			// nothing
+		}
+
+		// fill in values for placeholders. the first placeholder of an index
+		// that has a value defines the value for all placeholders with that index
+		const placeholderDefaultValues = new Map<number, Marker[] | undefined>();
+		const incompletePlaceholders: Placeholder[] = [];
+		snippet.walk(marker => {
+			if (marker instanceof Placeholder) {
+				if (marker.isFinalTabstop) {
+					placeholderDefaultValues.set(0, undefined);
+				} else if (!placeholderDefaultValues.has(marker.index) && marker.children.length > 0) {
+					placeholderDefaultValues.set(marker.index, marker.children);
+				} else {
+					incompletePlaceholders.push(marker);
+				}
+			}
+			return true;
+		});
+
+		const fillInIncompletePlaceholder = (placeholder: Placeholder, stack: Set<number>) => {
+			const defaultValues = placeholderDefaultValues.get(placeholder.index);
+			if (!defaultValues) {
+				return;
+			}
+			const clone = new Placeholder(placeholder.index);
+			clone.transform = placeholder.transform;
+			for (const child of defaultValues) {
+				const newChild = child.clone();
+				clone.appendChild(newChild);
+
+				// "recurse" on children that are again placeholders
+				if (newChild instanceof Placeholder && placeholderDefaultValues.has(newChild.index) && !stack.has(newChild.index)) {
+					stack.add(newChild.index);
+					fillInIncompletePlaceholder(newChild, stack);
+					stack.delete(newChild.index);
+				}
+			}
+			snippet.replace(placeholder, [clone]);
+		};
+
+		const stack = new Set<number>();
+		for (const placeholder of incompletePlaceholders) {
+			fillInIncompletePlaceholder(placeholder, stack);
+		}
+
+		return snippet.children.slice(offset);
+	}
+
+	ensureFinalTabstop(snippet: TextmateSnippet, enforceFinalTabstop: boolean, insertFinalTabstop: boolean) {
+
+		if (enforceFinalTabstop || insertFinalTabstop && snippet.placeholders.length > 0) {
+			const finalTabstop = snippet.placeholders.find(p => p.index === 0);
+			if (!finalTabstop) {
+				// the snippet uses placeholders but has no
+				// final tabstop defined -> insert at the end
+				snippet.appendChild(new Placeholder(0));
+			}
+		}
+
+	}
+
+	private _accept(type?: TokenType): boolean;
+	private _accept(type: TokenType | undefined, value: true): string;
+	private _accept(type: TokenType, value?: boolean): boolean | string {
+		if (type === undefined || this._token.type === type) {
+			const ret = !value ? true : this._scanner.tokenText(this._token);
+			this._token = this._scanner.next();
+			return ret;
+		}
+		return false;
+	}
+
+	private _backTo(token: Token): false {
+		this._scanner.pos = token.pos + token.len;
+		this._token = token;
+		return false;
+	}
+
+	private _until(type: TokenType): false | string {
+		const start = this._token;
+		while (this._token.type !== type) {
+			if (this._token.type === TokenType.EOF) {
+				return false;
+			} else if (this._token.type === TokenType.Backslash) {
+				const nextToken = this._scanner.next();
+				if (nextToken.type !== TokenType.Dollar
+					&& nextToken.type !== TokenType.CurlyClose
+					&& nextToken.type !== TokenType.Backslash) {
+					return false;
+				}
+			}
+			this._token = this._scanner.next();
+		}
+		const value = this._scanner.value.substring(start.pos, this._token.pos).replace(/\\(\$|}|\\)/g, '$1');
+		this._token = this._scanner.next();
+		return value;
+	}
+
+	private _parse(marker: Marker): boolean {
+		return this._parseEscaped(marker)
+			|| this._parseTabstopOrVariableName(marker)
+			|| this._parseComplexPlaceholder(marker)
+			|| this._parseComplexVariable(marker)
+			|| this._parseAnything(marker);
+	}
+
+	// \$, \\, \} -> just text
+	private _parseEscaped(marker: Marker): boolean {
+		let value: string;
+		if (value = this._accept(TokenType.Backslash, true)) {
+			// saw a backslash, append escaped token or that backslash
+			value = this._accept(TokenType.Dollar, true)
+				|| this._accept(TokenType.CurlyClose, true)
+				|| this._accept(TokenType.Backslash, true)
+				|| value;
+
+			marker.appendChild(new Text(value));
+			return true;
+		}
+		return false;
+	}
+
+	// $foo -> variable, $1 -> tabstop
+	private _parseTabstopOrVariableName(parent: Marker): boolean {
+		let value: string;
+		const token = this._token;
+		const match = this._accept(TokenType.Dollar)
+			&& (value = this._accept(TokenType.VariableName, true) || this._accept(TokenType.Int, true));
+
+		if (!match) {
+			return this._backTo(token);
+		}
+
+		parent.appendChild(/^\d+$/.test(value!)
+			? new Placeholder(Number(value!))
+			: new Variable(value!)
+		);
+		return true;
+	}
+
+	// ${1:<children>}, ${1} -> placeholder
+	private _parseComplexPlaceholder(parent: Marker): boolean {
+		let index: string;
+		const token = this._token;
+		const match = this._accept(TokenType.Dollar)
+			&& this._accept(TokenType.CurlyOpen)
+			&& (index = this._accept(TokenType.Int, true));
+
+		if (!match) {
+			return this._backTo(token);
+		}
+
+		const placeholder = new Placeholder(Number(index!));
+
+		if (this._accept(TokenType.Colon)) {
+			// ${1:<children>}
+			while (true) {
+
+				// ...} -> done
+				if (this._accept(TokenType.CurlyClose)) {
+					parent.appendChild(placeholder);
+					return true;
+				}
+
+				if (this._parse(placeholder)) {
+					continue;
+				}
+
+				// fallback
+				parent.appendChild(new Text('${' + index! + ':'));
+				placeholder.children.forEach(parent.appendChild, parent);
+				return true;
+			}
+		} else if (placeholder.index > 0 && this._accept(TokenType.Pipe)) {
+			// ${1|one,two,three|}
+			const choice = new Choice();
+
+			while (true) {
+				if (this._parseChoiceElement(choice)) {
+
+					if (this._accept(TokenType.Comma)) {
+						// opt, -> more
+						continue;
+					}
+
+					if (this._accept(TokenType.Pipe)) {
+						placeholder.appendChild(choice);
+						if (this._accept(TokenType.CurlyClose)) {
+							// ..|} -> done
+							parent.appendChild(placeholder);
+							return true;
+						}
+					}
+				}
+
+				this._backTo(token);
+				return false;
+			}
+
+		} else if (this._accept(TokenType.Forwardslash)) {
+			// ${1/<regex>/<format>/<options>}
+			if (this._parseTransform(placeholder)) {
+				parent.appendChild(placeholder);
+				return true;
+			}
+
+			this._backTo(token);
+			return false;
+
+		} else if (this._accept(TokenType.CurlyClose)) {
+			// ${1}
+			parent.appendChild(placeholder);
+			return true;
+
+		} else {
+			// ${1 <- missing curly or colon
+			return this._backTo(token);
+		}
+	}
+
+	private _parseChoiceElement(parent: Choice): boolean {
+		const token = this._token;
+		const values: string[] = [];
+
+		while (true) {
+			if (this._token.type === TokenType.Comma || this._token.type === TokenType.Pipe) {
+				break;
+			}
+			let value: string;
+			if (value = this._accept(TokenType.Backslash, true)) {
+				// \, \|, or \\
+				value = this._accept(TokenType.Comma, true)
+					|| this._accept(TokenType.Pipe, true)
+					|| this._accept(TokenType.Backslash, true)
+					|| value;
+			} else {
+				value = this._accept(undefined, true);
+			}
+			if (!value) {
+				// EOF
+				this._backTo(token);
+				return false;
+			}
+			values.push(value);
+		}
+
+		if (values.length === 0) {
+			this._backTo(token);
+			return false;
+		}
+
+		parent.appendChild(new Text(values.join('')));
+		return true;
+	}
+
+	// ${foo:<children>}, ${foo} -> variable
+	private _parseComplexVariable(parent: Marker): boolean {
+		let name: string;
+		const token = this._token;
+		const match = this._accept(TokenType.Dollar)
+			&& this._accept(TokenType.CurlyOpen)
+			&& (name = this._accept(TokenType.VariableName, true));
+
+		if (!match) {
+			return this._backTo(token);
+		}
+
+		const variable = new Variable(name!);
+
+		if (this._accept(TokenType.Colon)) {
+			// ${foo:<children>}
+			while (true) {
+
+				// ...} -> done
+				if (this._accept(TokenType.CurlyClose)) {
+					parent.appendChild(variable);
+					return true;
+				}
+
+				if (this._parse(variable)) {
+					continue;
+				}
+
+				// fallback
+				parent.appendChild(new Text('${' + name! + ':'));
+				variable.children.forEach(parent.appendChild, parent);
+				return true;
+			}
+
+		} else if (this._accept(TokenType.Forwardslash)) {
+			// ${foo/<regex>/<format>/<options>}
+			if (this._parseTransform(variable)) {
+				parent.appendChild(variable);
+				return true;
+			}
+
+			this._backTo(token);
+			return false;
+
+		} else if (this._accept(TokenType.CurlyClose)) {
+			// ${foo}
+			parent.appendChild(variable);
+			return true;
+
+		} else {
+			// ${foo <- missing curly or colon
+			return this._backTo(token);
+		}
+	}
+
+	private _parseTransform(parent: TransformableMarker): boolean {
+		// ...<regex>/<format>/<options>}
+
+		const transform = new Transform();
+		let regexValue = '';
+		let regexOptions = '';
+
+		// (1) /regex
+		while (true) {
+			if (this._accept(TokenType.Forwardslash)) {
+				break;
+			}
+
+			let escaped: string;
+			if (escaped = this._accept(TokenType.Backslash, true)) {
+				escaped = this._accept(TokenType.Forwardslash, true) || escaped;
+				regexValue += escaped;
+				continue;
+			}
+
+			if (this._token.type !== TokenType.EOF) {
+				regexValue += this._accept(undefined, true);
+				continue;
+			}
+			return false;
+		}
+
+		// (2) /format
+		while (true) {
+			if (this._accept(TokenType.Forwardslash)) {
+				break;
+			}
+
+			let escaped: string;
+			if (escaped = this._accept(TokenType.Backslash, true)) {
+				escaped = this._accept(TokenType.Backslash, true) || this._accept(TokenType.Forwardslash, true) || escaped;
+				transform.appendChild(new Text(escaped));
+				continue;
+			}
+
+			if (this._parseFormatString(transform) || this._parseAnything(transform)) {
+				continue;
+			}
+			return false;
+		}
+
+		// (3) /option
+		while (true) {
+			if (this._accept(TokenType.CurlyClose)) {
+				break;
+			}
+			if (this._token.type !== TokenType.EOF) {
+				regexOptions += this._accept(undefined, true);
+				continue;
+			}
+			return false;
+		}
+
+		try {
+			transform.regexp = new RegExp(regexValue, regexOptions);
+		} catch (e) {
+			// invalid regexp
+			return false;
+		}
+
+		parent.transform = transform;
+		return true;
+	}
+
+	private _parseFormatString(parent: Transform): boolean {
+
+		const token = this._token;
+		if (!this._accept(TokenType.Dollar)) {
+			return false;
+		}
+
+		let complex = false;
+		if (this._accept(TokenType.CurlyOpen)) {
+			complex = true;
+		}
+
+		const index = this._accept(TokenType.Int, true);
+
+		if (!index) {
+			this._backTo(token);
+			return false;
+
+		} else if (!complex) {
+			// $1
+			parent.appendChild(new FormatString(Number(index)));
+			return true;
+
+		} else if (this._accept(TokenType.CurlyClose)) {
+			// ${1}
+			parent.appendChild(new FormatString(Number(index)));
+			return true;
+
+		} else if (!this._accept(TokenType.Colon)) {
+			this._backTo(token);
+			return false;
+		}
+
+		if (this._accept(TokenType.Forwardslash)) {
+			// ${1:/upcase}
+			const shorthand = this._accept(TokenType.VariableName, true);
+			if (!shorthand || !this._accept(TokenType.CurlyClose)) {
+				this._backTo(token);
+				return false;
+			} else {
+				parent.appendChild(new FormatString(Number(index), shorthand));
+				return true;
+			}
+
+		} else if (this._accept(TokenType.Plus)) {
+			// ${1:+<if>}
+			const ifValue = this._until(TokenType.CurlyClose);
+			if (ifValue) {
+				parent.appendChild(new FormatString(Number(index), undefined, ifValue, undefined));
+				return true;
+			}
+
+		} else if (this._accept(TokenType.Dash)) {
+			// ${2:-<else>}
+			const elseValue = this._until(TokenType.CurlyClose);
+			if (elseValue) {
+				parent.appendChild(new FormatString(Number(index), undefined, undefined, elseValue));
+				return true;
+			}
+
+		} else if (this._accept(TokenType.QuestionMark)) {
+			// ${2:?<if>:<else>}
+			const ifValue = this._until(TokenType.Colon);
+			if (ifValue) {
+				const elseValue = this._until(TokenType.CurlyClose);
+				if (elseValue) {
+					parent.appendChild(new FormatString(Number(index), undefined, ifValue, elseValue));
+					return true;
+				}
+			}
+
+		} else {
+			// ${1:<else>}
+			const elseValue = this._until(TokenType.CurlyClose);
+			if (elseValue) {
+				parent.appendChild(new FormatString(Number(index), undefined, undefined, elseValue));
+				return true;
+			}
+		}
+
+		this._backTo(token);
+		return false;
+	}
+
+	private _parseAnything(marker: Marker): boolean {
+		if (this._token.type !== TokenType.EOF) {
+			marker.appendChild(new Text(this._scanner.tokenText(this._token)));
+			this._accept(undefined);
+			return true;
+		}
+		return false;
+	}
 }

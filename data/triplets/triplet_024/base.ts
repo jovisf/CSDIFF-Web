@@ -1,212 +1,56 @@
-import {
-  Middleware,
-  MiddlewareAPI,
-  applyMiddleware,
-  createStore,
-  Dispatch,
-  Reducer,
-  Action,
-  AnyAction
-} from '../..'
+"use client";
 
 /**
- * Logger middleware doesn't add any extra types to dispatch, just logs actions
- * and state.
+ * Accessibility Utilities
+ * Helper functions for improving accessibility
  */
-function logger() {
-  const loggerMiddleware: Middleware =
-    ({ getState }: MiddlewareAPI) =>
-    (next: Dispatch) =>
-    action => {
-      console.log('will dispatch', action)
 
-      // Call the next dispatch method in the middleware chain.
-      const returnValue = next(action)
-
-      console.log('state after dispatch', getState())
-
-      // This will likely be the action itself, unless
-      // a middleware further in chain changed it.
-      return returnValue
+export const accessibilityUtils = {
+  // Focus management
+  focusElement: (selector: string) => {
+    const element = document.querySelector(selector) as HTMLElement;
+    if (element) {
+      element.focus();
     }
+  },
 
-  return loggerMiddleware
-}
-
-/**
- * Promise middleware adds support for dispatching promises.
- */
-
-type PromiseDispatch = <T extends Action>(promise: Promise<T>) => Promise<T>
-
-function promise() {
-  const promiseMiddleware: Middleware<PromiseDispatch> =
-    ({ dispatch }: MiddlewareAPI) =>
-    next =>
-    <T extends Action>(action: AnyAction | Promise<T>) => {
-      if (action instanceof Promise) {
-        action.then(dispatch)
-        return action
-      }
-
-      return next(action)
+  // Skip to main content
+  skipToMain: () => {
+    const main = document.querySelector('main') as HTMLElement;
+    if (main) {
+      main.focus();
+      main.scrollIntoView();
     }
+  },
 
-  return promiseMiddleware
-}
+  // Announce to screen readers
+  announce: (message: string) => {
+    const announcement = document.createElement('div');
+    announcement.setAttribute('aria-live', 'polite');
+    announcement.setAttribute('aria-atomic', 'true');
+    announcement.className = 'sr-only';
+    announcement.textContent = message;
+    document.body.appendChild(announcement);
+    setTimeout(() => {
+      document.body.removeChild(announcement);
+    }, 1000);
+  },
 
-/**
- * Thunk middleware adds support for dispatching thunks.
- */
+  // Check if element is visible
+  isVisible: (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  },
 
-interface Thunk<R, S, DispatchExt = {}> {
-  (dispatch: Dispatch & ThunkDispatch<S> & DispatchExt, getState: () => S): R
-}
-
-interface ThunkDispatch<S, DispatchExt = {}> {
-  <R>(thunk: Thunk<R, S, DispatchExt>): R
-}
-
-function thunk<S, DispatchExt>() {
-  const thunkMiddleware: Middleware<
-    ThunkDispatch<S, DispatchExt>,
-    S,
-    Dispatch & ThunkDispatch<S>
-  > =
-    api =>
-    (next: Dispatch) =>
-    <R>(action: AnyAction | Thunk<R, any>) =>
-      typeof action === 'function'
-        ? action(api.dispatch, api.getState)
-        : next(action)
-
-  return thunkMiddleware
-}
-
-/**
- * Middleware that expects exact state type.
- */
-function customState() {
-  type State = { field: 'string' }
-
-  const customMiddleware: Middleware<{}, State> =
-    api => (next: Dispatch) => action => {
-      api.getState().field
-      // @ts-expect-error
-      api.getState().wrongField
-
-      return next(action)
-    }
-
-  return customMiddleware
-}
-
-/**
- * Middleware that expects custom dispatch.
- */
-function customDispatch() {
-  type MyAction = { type: 'INCREMENT' } | { type: 'DECREMENT' }
-
-  // dispatch that expects action union
-  type MyDispatch = Dispatch<MyAction>
-
-  const customDispatch: Middleware =
-    (api: MiddlewareAPI<MyDispatch>) => next => action => {
-      api.dispatch({ type: 'INCREMENT' })
-      api.dispatch({ type: 'DECREMENT' })
-      // @ts-expect-error
-      api.dispatch({ type: 'UNKNOWN' })
-    }
-}
-
-/**
- * Test the type of store.dispatch after applying different middleware.
- */
-function apply() {
-  interface State {
-    someField: 'string'
+  // Get accessible name
+  getAccessibleName: (element: HTMLElement) => {
+    return element.getAttribute('aria-label') ||
+           element.getAttribute('aria-labelledby') ||
+           element.textContent ||
+           element.getAttribute('alt') ||
+           element.getAttribute('title') ||
+           '';
   }
-  const reducer: Reducer<State> = null as any
+};
 
-  /**
-   * logger
-   */
-  const storeWithLogger = createStore(reducer, applyMiddleware(logger()))
-  // can only dispatch actions
-  storeWithLogger.dispatch({ type: 'INCREMENT' })
-  // @ts-expect-error
-  storeWithLogger.dispatch(Promise.resolve({ type: 'INCREMENT' }))
-  // @ts-expect-error
-  storeWithLogger.dispatch('not-an-action')
-
-  /**
-   * promise
-   */
-  const storeWithPromise = createStore(reducer, applyMiddleware(promise()))
-  // can dispatch actions and promises
-  storeWithPromise.dispatch({ type: 'INCREMENT' })
-  storeWithPromise.dispatch(Promise.resolve({ type: 'INCREMENT' }))
-  // @ts-expect-error
-  storeWithPromise.dispatch('not-an-action')
-  // @ts-expect-error
-  storeWithPromise.dispatch(Promise.resolve('not-an-action'))
-
-  /**
-   * promise + logger
-   */
-  const storeWithPromiseAndLogger = createStore(
-    reducer,
-    applyMiddleware(promise(), logger())
-  )
-  // can dispatch actions and promises
-  storeWithPromiseAndLogger.dispatch({ type: 'INCREMENT' })
-  storeWithPromiseAndLogger.dispatch(Promise.resolve({ type: 'INCREMENT' }))
-  // @ts-expect-error
-  storeWithPromiseAndLogger.dispatch('not-an-action')
-  // @ts-expect-error
-  storeWithPromiseAndLogger.dispatch(Promise.resolve('not-an-action'))
-
-  /**
-   * promise + thunk
-   */
-  const storeWithPromiseAndThunk = createStore(
-    reducer,
-    applyMiddleware(promise(), thunk<State, PromiseDispatch>(), logger())
-  )
-  // can dispatch actions, promises and thunks
-  storeWithPromiseAndThunk.dispatch({ type: 'INCREMENT' })
-  storeWithPromiseAndThunk.dispatch(Promise.resolve({ type: 'INCREMENT' }))
-  storeWithPromiseAndThunk.dispatch((dispatch, getState) => {
-    getState().someField
-    // @ts-expect-error
-    getState().wrongField
-
-    // injected dispatch accepts actions, thunks and promises
-    dispatch({ type: 'INCREMENT' })
-    dispatch(dispatch => dispatch({ type: 'INCREMENT' }))
-    dispatch(Promise.resolve({ type: 'INCREMENT' }))
-    // @ts-expect-error
-    dispatch('not-an-action')
-  })
-  // @ts-expect-error
-  storeWithPromiseAndThunk.dispatch('not-an-action')
-  // @ts-expect-error
-  storeWithPromiseAndThunk.dispatch(Promise.resolve('not-an-action'))
-
-  /**
-   * Test variadic signature.
-   */
-  const storeWithLotsOfMiddleware = createStore(
-    reducer,
-    applyMiddleware<PromiseDispatch>(
-      promise(),
-      logger(),
-      logger(),
-      logger(),
-      logger(),
-      logger()
-    )
-  )
-  storeWithLotsOfMiddleware.dispatch({ type: 'INCREMENT' })
-  storeWithLotsOfMiddleware.dispatch(Promise.resolve({ type: 'INCREMENT' }))
-}
+export default accessibilityUtils;

@@ -1,1157 +1,1138 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+'use strict'
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//   /!\ DO NOT MODIFY THIS FILE /!\
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//
-// The only job of create-react-app is to init the repository and then
-// forward all the commands to the local version of create-react-app.
-//
-// If you need to add a new command, please add it to the scripts/ folder.
-//
-// The only reason to modify this file is to add more warnings and
-// troubleshooting information for the `create-react-app` command.
-//
-// Do not make breaking changes! We absolutely don't want to have to
-// tell people to update their global version of create-react-app.
-//
-// Also be careful with new language features.
-// This file must work on Node 10+.
-//
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//   /!\ DO NOT MODIFY THIS FILE /!\
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+var after = require('after');
+var express = require('../')
+  , request = require('supertest')
+  , assert = require('assert')
+  , methods = require('methods');
 
-'use strict';
+var describePromises = global.Promise ? describe : describe.skip
 
-const https = require('https');
-const chalk = require('chalk');
-const commander = require('commander');
-const dns = require('dns');
-const envinfo = require('envinfo');
-const execSync = require('child_process').execSync;
-const fs = require('fs-extra');
-const hyperquest = require('hyperquest');
-const prompts = require('prompts');
-const os = require('os');
-const path = require('path');
-const semver = require('semver');
-const spawn = require('cross-spawn');
-const tmp = require('tmp');
-const unpack = require('tar-pack').unpack;
-const url = require('url');
-const validateProjectName = require('validate-npm-package-name');
+describe('app.router', function(){
+  it('should restore req.params after leaving router', function(done){
+    var app = express();
+    var router = new express.Router();
 
-const packageJson = require('./package.json');
+    function handler1(req, res, next){
+      res.setHeader('x-user-id', String(req.params.id));
+      next()
+    }
 
-let projectName;
+    function handler2(req, res){
+      res.send(req.params.id);
+    }
 
-function init() {
-  const program = new commander.Command(packageJson.name)
-    .version(packageJson.version)
-    .arguments('<project-directory>')
-    .usage(`${chalk.green('<project-directory>')} [options]`)
-    .action(name => {
-      projectName = name;
+    router.use(function(req, res, next){
+      res.setHeader('x-router', String(req.params.id));
+      next();
+    });
+
+    app.get('/user/:id', handler1, router, handler2);
+
+    request(app)
+    .get('/user/1')
+    .expect('x-router', 'undefined')
+    .expect('x-user-id', '1')
+    .expect(200, '1', done);
+  })
+
+  describe('methods', function(){
+    methods.forEach(function(method){
+      if (method === 'connect') return;
+
+      it('should include ' + method.toUpperCase(), function(done){
+        var app = express();
+
+        app[method]('/foo', function(req, res){
+          res.send(method)
+        });
+
+        request(app)
+        [method]('/foo')
+        .expect(200, done)
+      })
+
+      it('should reject numbers for app.' + method, function(){
+        var app = express();
+        assert.throws(app[method].bind(app, '/', 3), /argument handler must be a function/);
+      })
+    });
+
+    it('should re-route when method is altered', function (done) {
+      var app = express();
+      var cb = after(3, done);
+
+      app.use(function (req, res, next) {
+        if (req.method !== 'POST') return next();
+        req.method = 'DELETE';
+        res.setHeader('X-Method-Altered', '1');
+        next();
+      });
+
+      app.delete('/', function (req, res) {
+        res.end('deleted everything');
+      });
+
+      request(app)
+      .get('/')
+      .expect(404, cb)
+
+      request(app)
+      .delete('/')
+      .expect(200, 'deleted everything', cb);
+
+      request(app)
+      .post('/')
+      .expect('X-Method-Altered', '1')
+      .expect(200, 'deleted everything', cb);
+    });
+  })
+
+  describe('decode params', function () {
+    it('should decode correct params', function(done){
+      var app = express();
+
+      app.get('/:name', function (req, res) {
+        res.send(req.params.name);
+      });
+
+      request(app)
+      .get('/foo%2Fbar')
+      .expect('foo/bar', done);
     })
-    .option('--verbose', 'print additional logs')
-    .option('--info', 'print environment debug info')
-    .option(
-      '--scripts-version <alternative-package>',
-      'use a non-standard version of react-scripts'
-    )
-    .option(
-      '--template <path-to-template>',
-      'specify a template for the created project'
-    )
-    .option('--use-npm')
-    .option('--use-pnp')
-    .allowUnknownOption()
-    .on('--help', () => {
-      console.log(
-        `    Only ${chalk.green('<project-directory>')} is required.`
-      );
-      console.log();
-      console.log(
-        `    A custom ${chalk.cyan('--scripts-version')} can be one of:`
-      );
-      console.log(`      - a specific npm version: ${chalk.green('0.8.2')}`);
-      console.log(`      - a specific npm tag: ${chalk.green('@next')}`);
-      console.log(
-        `      - a custom fork published on npm: ${chalk.green(
-          'my-react-scripts'
-        )}`
-      );
-      console.log(
-        `      - a local path relative to the current working directory: ${chalk.green(
-          'file:../my-react-scripts'
-        )}`
-      );
-      console.log(
-        `      - a .tgz archive: ${chalk.green(
-          'https://mysite.com/my-react-scripts-0.8.2.tgz'
-        )}`
-      );
-      console.log(
-        `      - a .tar.gz archive: ${chalk.green(
-          'https://mysite.com/my-react-scripts-0.8.2.tar.gz'
-        )}`
-      );
-      console.log(
-        `    It is not needed unless you specifically want to use a fork.`
-      );
-      console.log();
-      console.log(`    A custom ${chalk.cyan('--template')} can be one of:`);
-      console.log(
-        `      - a custom template published on npm: ${chalk.green(
-          'cra-template-typescript'
-        )}`
-      );
-      console.log(
-        `      - a local path relative to the current working directory: ${chalk.green(
-          'file:../my-custom-template'
-        )}`
-      );
-      console.log(
-        `      - a .tgz archive: ${chalk.green(
-          'https://mysite.com/my-custom-template-0.8.2.tgz'
-        )}`
-      );
-      console.log(
-        `      - a .tar.gz archive: ${chalk.green(
-          'https://mysite.com/my-custom-template-0.8.2.tar.gz'
-        )}`
-      );
-      console.log();
-      console.log(
-        `    If you have any problems, do not hesitate to file an issue:`
-      );
-      console.log(
-        `      ${chalk.cyan(
-          'https://github.com/facebook/create-react-app/issues/new'
-        )}`
-      );
-      console.log();
+
+    it('should not accept params in malformed paths', function(done) {
+      var app = express();
+
+      app.get('/:name', function (req, res) {
+        res.send(req.params.name);
+      });
+
+      request(app)
+      .get('/%foobar')
+      .expect(400, done);
     })
-    .parse(process.argv);
 
-  if (program.info) {
-    console.log(chalk.bold('\nEnvironment Info:'));
-    console.log(
-      `\n  current version of ${packageJson.name}: ${packageJson.version}`
-    );
-    console.log(`  running from ${__dirname}`);
-    return envinfo
-      .run(
-        {
-          System: ['OS', 'CPU'],
-          Binaries: ['Node', 'npm', 'Yarn'],
-          Browsers: [
-            'Chrome',
-            'Edge',
-            'Internet Explorer',
-            'Firefox',
-            'Safari',
-          ],
-          npmPackages: ['react', 'react-dom', 'react-scripts'],
-          npmGlobalPackages: ['create-react-app'],
-        },
-        {
-          duplicates: true,
-          showNotFound: true,
-        }
-      )
-      .then(console.log);
-  }
+    it('should not decode spaces', function(done) {
+      var app = express();
 
-  if (typeof projectName === 'undefined') {
-    console.error('Please specify the project directory:');
-    console.log(
-      `  ${chalk.cyan(program.name())} ${chalk.green('<project-directory>')}`
-    );
-    console.log();
-    console.log('For example:');
-    console.log(
-      `  ${chalk.cyan(program.name())} ${chalk.green('my-react-app')}`
-    );
-    console.log();
-    console.log(
-      `Run ${chalk.cyan(`${program.name()} --help`)} to see all options.`
-    );
-    process.exit(1);
-  }
+      app.get('/:name', function (req, res) {
+        res.send(req.params.name);
+      });
 
-  // We first check the registry directly via the API, and if that fails, we try
-  // the slower `npm view [package] version` command.
-  //
-  // This is important for users in environments where direct access to npm is
-  // blocked by a firewall, and packages are provided exclusively via a private
-  // registry.
-  checkForLatestVersion()
-    .catch(() => {
-      try {
-        return execSync('npm view create-react-app version').toString().trim();
-      } catch (e) {
-        return null;
-      }
+      request(app)
+      .get('/foo+bar')
+      .expect('foo+bar', done);
     })
-    .then(latest => {
-      if (latest && semver.lt(packageJson.version, latest)) {
-        console.log();
-        console.error(
-          chalk.yellow(
-            `You are running \`create-react-app\` ${packageJson.version}, which is behind the latest release (${latest}).\n\n` +
-              'We no longer support global installation of Create React App.'
-          )
-        );
-        console.log();
-        console.log(
-          'Please remove any global installs with one of the following commands:\n' +
-            '- npm uninstall -g create-react-app\n' +
-            '- yarn global remove create-react-app'
-        );
-        console.log();
-        console.log(
-          'The latest instructions for creating a new app can be found here:\n' +
-            'https://create-react-app.dev/docs/getting-started/'
-        );
-        console.log();
-        process.exit(1);
-      } else {
-        createApp(
-          projectName,
-          program.verbose,
-          program.scriptsVersion,
-          program.template,
-          program.useNpm,
-          program.usePnp
-        );
-      }
-    });
-}
 
-function createApp(name, verbose, version, template, useNpm, usePnp) {
-  const unsupportedNodeVersion = !semver.satisfies(
-    // Coerce strings with metadata (i.e. `15.0.0-nightly`).
-    semver.coerce(process.version),
-    '>=10'
-  );
+    it('should work with unicode', function(done) {
+      var app = express();
 
-  if (unsupportedNodeVersion) {
-    console.log(
-      chalk.yellow(
-        `You are using Node ${process.version} so the project will be bootstrapped with an old unsupported version of tools.\n\n` +
-          `Please update to Node 10 or higher for a better, fully supported experience.\n`
-      )
-    );
-    // Fall back to latest supported react-scripts on Node 4
-    version = 'react-scripts@0.9.x';
-  }
-
-  const root = path.resolve(name);
-  const appName = path.basename(root);
-
-  checkAppName(appName);
-  fs.ensureDirSync(name);
-  if (!isSafeToCreateProjectIn(root, name)) {
-    process.exit(1);
-  }
-  console.log();
-
-  console.log(`Creating a new React app in ${chalk.green(root)}.`);
-  console.log();
-
-  const packageJson = {
-    name: appName,
-    version: '0.1.0',
-    private: true,
-  };
-  fs.writeFileSync(
-    path.join(root, 'package.json'),
-    JSON.stringify(packageJson, null, 2) + os.EOL
-  );
-
-  const useYarn = useNpm ? false : shouldUseYarn();
-  const originalDirectory = process.cwd();
-  process.chdir(root);
-  if (!useYarn && !checkThatNpmCanReadCwd()) {
-    process.exit(1);
-  }
-
-  if (!useYarn) {
-    const npmInfo = checkNpmVersion();
-    if (!npmInfo.hasMinNpm) {
-      if (npmInfo.npmVersion) {
-        console.log(
-          chalk.yellow(
-            `You are using npm ${npmInfo.npmVersion} so the project will be bootstrapped with an old unsupported version of tools.\n\n` +
-              `Please update to npm 6 or higher for a better, fully supported experience.\n`
-          )
-        );
-      }
-      // Fall back to latest supported react-scripts for npm 3
-      version = 'react-scripts@0.9.x';
-    }
-  } else if (usePnp) {
-    const yarnInfo = checkYarnVersion();
-    if (yarnInfo.yarnVersion) {
-      if (!yarnInfo.hasMinYarnPnp) {
-        console.log(
-          chalk.yellow(
-            `You are using Yarn ${yarnInfo.yarnVersion} together with the --use-pnp flag, but Plug'n'Play is only supported starting from the 1.12 release.\n\n` +
-              `Please update to Yarn 1.12 or higher for a better, fully supported experience.\n`
-          )
-        );
-        // 1.11 had an issue with webpack-dev-middleware, so better not use PnP with it (never reached stable, but still)
-        usePnp = false;
-      }
-      if (!yarnInfo.hasMaxYarnPnp) {
-        console.log(
-          chalk.yellow(
-            'The --use-pnp flag is no longer necessary with yarn 2 and will be deprecated and removed in a future release.\n'
-          )
-        );
-        // 2 supports PnP by default and breaks when trying to use the flag
-        usePnp = false;
-      }
-    }
-  }
-
-  if (useYarn) {
-    let yarnUsesDefaultRegistry = true;
-    try {
-      yarnUsesDefaultRegistry =
-        execSync('yarnpkg config get registry').toString().trim() ===
-        'https://registry.yarnpkg.com';
-    } catch (e) {
-      // ignore
-    }
-    if (yarnUsesDefaultRegistry) {
-      fs.copySync(
-        require.resolve('./yarn.lock.cached'),
-        path.join(root, 'yarn.lock')
-      );
-    }
-  }
-
-  run(
-    root,
-    appName,
-    version,
-    verbose,
-    originalDirectory,
-    template,
-    useYarn,
-    usePnp
-  );
-}
-
-function shouldUseYarn() {
-  try {
-    execSync('yarnpkg --version', { stdio: 'ignore' });
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function install(root, useYarn, usePnp, dependencies, verbose, isOnline) {
-  return new Promise((resolve, reject) => {
-    let command;
-    let args;
-    if (useYarn) {
-      command = 'yarnpkg';
-      args = ['add', '--exact'];
-      if (!isOnline) {
-        args.push('--offline');
-      }
-      if (usePnp) {
-        args.push('--enable-pnp');
-      }
-      [].push.apply(args, dependencies);
-
-      // Explicitly set cwd() to work around issues like
-      // https://github.com/facebook/create-react-app/issues/3326.
-      // Unfortunately we can only do this for Yarn because npm support for
-      // equivalent --prefix flag doesn't help with this issue.
-      // This is why for npm, we run checkThatNpmCanReadCwd() early instead.
-      args.push('--cwd');
-      args.push(root);
-
-      if (!isOnline) {
-        console.log(chalk.yellow('You appear to be offline.'));
-        console.log(chalk.yellow('Falling back to the local Yarn cache.'));
-        console.log();
-      }
-    } else {
-      command = 'npm';
-      args = [
-        'install',
-        '--no-audit', // https://github.com/facebook/create-react-app/issues/11174
-        '--save',
-        '--save-exact',
-        '--loglevel',
-        'error',
-      ].concat(dependencies);
-
-      if (usePnp) {
-        console.log(chalk.yellow("NPM doesn't support PnP."));
-        console.log(chalk.yellow('Falling back to the regular installs.'));
-        console.log();
-      }
-    }
-
-    if (verbose) {
-      args.push('--verbose');
-    }
-
-    const child = spawn(command, args, { stdio: 'inherit' });
-    child.on('close', code => {
-      if (code !== 0) {
-        reject({
-          command: `${command} ${args.join(' ')}`,
-        });
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
-function run(
-  root,
-  appName,
-  version,
-  verbose,
-  originalDirectory,
-  template,
-  useYarn,
-  usePnp
-) {
-  Promise.all([
-    getInstallPackage(version, originalDirectory),
-    getTemplateInstallPackage(template, originalDirectory),
-  ]).then(([packageToInstall, templateToInstall]) => {
-    const allDependencies = ['react', 'react-dom', packageToInstall];
-
-    console.log('Installing packages. This might take a couple of minutes.');
-
-    Promise.all([
-      getPackageInfo(packageToInstall),
-      getPackageInfo(templateToInstall),
-    ])
-      .then(([packageInfo, templateInfo]) =>
-        checkIfOnline(useYarn).then(isOnline => ({
-          isOnline,
-          packageInfo,
-          templateInfo,
-        }))
-      )
-      .then(({ isOnline, packageInfo, templateInfo }) => {
-        let packageVersion = semver.coerce(packageInfo.version);
-
-        const templatesVersionMinimum = '3.3.0';
-
-        // Assume compatibility if we can't test the version.
-        if (!semver.valid(packageVersion)) {
-          packageVersion = templatesVersionMinimum;
-        }
-
-        // Only support templates when used alongside new react-scripts versions.
-        const supportsTemplates = semver.gte(
-          packageVersion,
-          templatesVersionMinimum
-        );
-        if (supportsTemplates) {
-          allDependencies.push(templateToInstall);
-        } else if (template) {
-          console.log('');
-          console.log(
-            `The ${chalk.cyan(packageInfo.name)} version you're using ${
-              packageInfo.name === 'react-scripts' ? 'is not' : 'may not be'
-            } compatible with the ${chalk.cyan('--template')} option.`
-          );
-          console.log('');
-        }
-
-        console.log(
-          `Installing ${chalk.cyan('react')}, ${chalk.cyan(
-            'react-dom'
-          )}, and ${chalk.cyan(packageInfo.name)}${
-            supportsTemplates ? ` with ${chalk.cyan(templateInfo.name)}` : ''
-          }...`
-        );
-        console.log();
-
-        return install(
-          root,
-          useYarn,
-          usePnp,
-          allDependencies,
-          verbose,
-          isOnline
-        ).then(() => ({
-          packageInfo,
-          supportsTemplates,
-          templateInfo,
-        }));
-      })
-      .then(async ({ packageInfo, supportsTemplates, templateInfo }) => {
-        const packageName = packageInfo.name;
-        const templateName = supportsTemplates ? templateInfo.name : undefined;
-        checkNodeVersion(packageName);
-        setCaretRangeForRuntimeDeps(packageName);
-
-        const pnpPath = path.resolve(process.cwd(), '.pnp.js');
-
-        const nodeArgs = fs.existsSync(pnpPath) ? ['--require', pnpPath] : [];
-
-        await executeNodeScript(
-          {
-            cwd: process.cwd(),
-            args: nodeArgs,
-          },
-          [root, appName, verbose, originalDirectory, templateName],
-          `
-        var init = require('${packageName}/scripts/init.js');
-        init.apply(null, JSON.parse(process.argv[1]));
-      `
-        );
-
-        if (version === 'react-scripts@0.9.x') {
-          console.log(
-            chalk.yellow(
-              `\nNote: the project was bootstrapped with an old unsupported version of tools.\n` +
-                `Please update to Node >=10 and npm >=6 to get supported tools in new projects.\n`
-            )
-          );
-        }
-      })
-      .catch(reason => {
-        console.log();
-        console.log('Aborting installation.');
-        if (reason.command) {
-          console.log(`  ${chalk.cyan(reason.command)} has failed.`);
-        } else {
-          console.log(
-            chalk.red('Unexpected error. Please report it as a bug:')
-          );
-          console.log(reason);
-        }
-        console.log();
-
-        // On 'exit' we will delete these files from target directory.
-        const knownGeneratedFiles = [
-          'package.json',
-          'yarn.lock',
-          'node_modules',
-        ];
-        const currentFiles = fs.readdirSync(path.join(root));
-        currentFiles.forEach(file => {
-          knownGeneratedFiles.forEach(fileToMatch => {
-            // This removes all knownGeneratedFiles.
-            if (file === fileToMatch) {
-              console.log(`Deleting generated file... ${chalk.cyan(file)}`);
-              fs.removeSync(path.join(root, file));
-            }
-          });
-        });
-        const remainingFiles = fs.readdirSync(path.join(root));
-        if (!remainingFiles.length) {
-          // Delete target folder if empty
-          console.log(
-            `Deleting ${chalk.cyan(`${appName}/`)} from ${chalk.cyan(
-              path.resolve(root, '..')
-            )}`
-          );
-          process.chdir(path.resolve(root, '..'));
-          fs.removeSync(path.join(root));
-        }
-        console.log('Done.');
-        process.exit(1);
+      app.get('/:name', function (req, res) {
+        res.send(req.params.name);
       });
-  });
-}
 
-function getInstallPackage(version, originalDirectory) {
-  let packageToInstall = 'react-scripts';
-  const validSemver = semver.valid(version);
-  if (validSemver) {
-    packageToInstall += `@${validSemver}`;
-  } else if (version) {
-    if (version[0] === '@' && !version.includes('/')) {
-      packageToInstall += version;
-    } else if (version.match(/^file:/)) {
-      packageToInstall = `file:${path.resolve(
-        originalDirectory,
-        version.match(/^file:(.*)?$/)[1]
-      )}`;
-    } else {
-      // for tar.gz or alternative paths
-      packageToInstall = version;
-    }
-  }
+      request(app)
+      .get('/%ce%b1')
+      .expect('\u03b1', done);
+    })
+  })
 
-  const scriptsToWarn = [
-    {
-      name: 'react-scripts-ts',
-      message: chalk.yellow(
-        `The react-scripts-ts package is deprecated. TypeScript is now supported natively in Create React App. You can use the ${chalk.green(
-          '--template typescript'
-        )} option instead when generating your app to include TypeScript support. Would you like to continue using react-scripts-ts?`
-      ),
-    },
-  ];
+  it('should be .use()able', function(done){
+    var app = express();
 
-  for (const script of scriptsToWarn) {
-    if (packageToInstall.startsWith(script.name)) {
-      return prompts({
-        type: 'confirm',
-        name: 'useScript',
-        message: script.message,
-        initial: false,
-      }).then(answer => {
-        if (!answer.useScript) {
-          process.exit(0);
-        }
+    var calls = [];
 
-        return packageToInstall;
+    app.use(function(req, res, next){
+      calls.push('before');
+      next();
+    });
+
+    app.get('/', function(req, res, next){
+      calls.push('GET /')
+      next();
+    });
+
+    app.use(function(req, res, next){
+      calls.push('after');
+      res.json(calls)
+    });
+
+    request(app)
+    .get('/')
+    .expect(200, ['before', 'GET /', 'after'], done)
+  })
+
+  describe('when given a regexp', function(){
+    it('should match the pathname only', function(done){
+      var app = express();
+
+      app.get(/^\/user\/[0-9]+$/, function(req, res){
+        res.end('user');
       });
-    }
-  }
 
-  return Promise.resolve(packageToInstall);
-}
+      request(app)
+      .get('/user/12?foo=bar')
+      .expect('user', done);
+    })
 
-function getTemplateInstallPackage(template, originalDirectory) {
-  let templateToInstall = 'cra-template';
-  if (template) {
-    if (template.match(/^file:/)) {
-      templateToInstall = `file:${path.resolve(
-        originalDirectory,
-        template.match(/^file:(.*)?$/)[1]
-      )}`;
-    } else if (
-      template.includes('://') ||
-      template.match(/^.+\.(tgz|tar\.gz)$/)
-    ) {
-      // for tar.gz or alternative paths
-      templateToInstall = template;
-    } else {
-      // Add prefix 'cra-template-' to non-prefixed templates, leaving any
-      // @scope/ and @version intact.
-      const packageMatch = template.match(/^(@[^/]+\/)?([^@]+)?(@.+)?$/);
-      const scope = packageMatch[1] || '';
-      const templateName = packageMatch[2] || '';
-      const version = packageMatch[3] || '';
+    it('should populate req.params with the captures', function(done){
+      var app = express();
 
-      if (
-        templateName === templateToInstall ||
-        templateName.startsWith(`${templateToInstall}-`)
-      ) {
-        // Covers:
-        // - cra-template
-        // - @SCOPE/cra-template
-        // - cra-template-NAME
-        // - @SCOPE/cra-template-NAME
-        templateToInstall = `${scope}${templateName}${version}`;
-      } else if (version && !scope && !templateName) {
-        // Covers using @SCOPE only
-        templateToInstall = `${version}/${templateToInstall}`;
-      } else {
-        // Covers templates without the `cra-template` prefix:
-        // - NAME
-        // - @SCOPE/NAME
-        templateToInstall = `${scope}${templateToInstall}-${templateName}${version}`;
-      }
-    }
-  }
-
-  return Promise.resolve(templateToInstall);
-}
-
-function getTemporaryDirectory() {
-  return new Promise((resolve, reject) => {
-    // Unsafe cleanup lets us recursively delete the directory if it contains
-    // contents; by default it only allows removal if it's empty
-    tmp.dir({ unsafeCleanup: true }, (err, tmpdir, callback) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve({
-          tmpdir: tmpdir,
-          cleanup: () => {
-            try {
-              callback();
-            } catch (ignored) {
-              // Callback might throw and fail, since it's a temp directory the
-              // OS will clean it up eventually...
-            }
-          },
-        });
-      }
-    });
-  });
-}
-
-function extractStream(stream, dest) {
-  return new Promise((resolve, reject) => {
-    stream.pipe(
-      unpack(dest, err => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(dest);
-        }
-      })
-    );
-  });
-}
-
-// Extract package name from tarball url or path.
-function getPackageInfo(installPackage) {
-  if (installPackage.match(/^.+\.(tgz|tar\.gz)$/)) {
-    return getTemporaryDirectory()
-      .then(obj => {
-        let stream;
-        if (/^http/.test(installPackage)) {
-          stream = hyperquest(installPackage);
-        } else {
-          stream = fs.createReadStream(installPackage);
-        }
-        return extractStream(stream, obj.tmpdir).then(() => obj);
-      })
-      .then(obj => {
-        const { name, version } = require(path.join(
-          obj.tmpdir,
-          'package.json'
-        ));
-        obj.cleanup();
-        return { name, version };
-      })
-      .catch(err => {
-        // The package name could be with or without semver version, e.g. react-scripts-0.2.0-alpha.1.tgz
-        // However, this function returns package name only without semver version.
-        console.log(
-          `Could not extract the package name from the archive: ${err.message}`
-        );
-        const assumedProjectName = installPackage.match(
-          /^.+\/(.+?)(?:-\d+.+)?\.(tgz|tar\.gz)$/
-        )[1];
-        console.log(
-          `Based on the filename, assuming it is "${chalk.cyan(
-            assumedProjectName
-          )}"`
-        );
-        return Promise.resolve({ name: assumedProjectName });
+      app.get(/^\/user\/([0-9]+)\/(view|edit)?$/, function(req, res){
+        var id = req.params[0]
+          , op = req.params[1];
+        res.end(op + 'ing user ' + id);
       });
-  } else if (installPackage.startsWith('git+')) {
-    // Pull package name out of git urls e.g:
-    // git+https://github.com/mycompany/react-scripts.git
-    // git+ssh://github.com/mycompany/react-scripts.git#v1.2.3
-    return Promise.resolve({
-      name: installPackage.match(/([^/]+)\.git(#.*)?$/)[1],
-    });
-  } else if (installPackage.match(/.+@/)) {
-    // Do not match @scope/ when stripping off @version or @tag
-    return Promise.resolve({
-      name: installPackage.charAt(0) + installPackage.substr(1).split('@')[0],
-      version: installPackage.split('@')[1],
-    });
-  } else if (installPackage.match(/^file:/)) {
-    const installPackagePath = installPackage.match(/^file:(.*)?$/)[1];
-    const { name, version } = require(path.join(
-      installPackagePath,
-      'package.json'
-    ));
-    return Promise.resolve({ name, version });
-  }
-  return Promise.resolve({ name: installPackage });
-}
 
-function checkNpmVersion() {
-  let hasMinNpm = false;
-  let npmVersion = null;
-  try {
-    npmVersion = execSync('npm --version').toString().trim();
-    hasMinNpm = semver.gte(npmVersion, '6.0.0');
-  } catch (err) {
-    // ignore
-  }
-  return {
-    hasMinNpm: hasMinNpm,
-    npmVersion: npmVersion,
-  };
-}
+      request(app)
+      .get('/user/10/edit')
+      .expect('editing user 10', done);
+    })
 
-function checkYarnVersion() {
-  const minYarnPnp = '1.12.0';
-  const maxYarnPnp = '2.0.0';
-  let hasMinYarnPnp = false;
-  let hasMaxYarnPnp = false;
-  let yarnVersion = null;
-  try {
-    yarnVersion = execSync('yarnpkg --version').toString().trim();
-    if (semver.valid(yarnVersion)) {
-      hasMinYarnPnp = semver.gte(yarnVersion, minYarnPnp);
-      hasMaxYarnPnp = semver.lt(yarnVersion, maxYarnPnp);
-    } else {
-      // Handle non-semver compliant yarn version strings, which yarn currently
-      // uses for nightly builds. The regex truncates anything after the first
-      // dash. See #5362.
-      const trimmedYarnVersionMatch = /^(.+?)[-+].+$/.exec(yarnVersion);
-      if (trimmedYarnVersionMatch) {
-        const trimmedYarnVersion = trimmedYarnVersionMatch.pop();
-        hasMinYarnPnp = semver.gte(trimmedYarnVersion, minYarnPnp);
-        hasMaxYarnPnp = semver.lt(trimmedYarnVersion, maxYarnPnp);
-      }
-    }
-  } catch (err) {
-    // ignore
-  }
-  return {
-    hasMinYarnPnp: hasMinYarnPnp,
-    hasMaxYarnPnp: hasMaxYarnPnp,
-    yarnVersion: yarnVersion,
-  };
-}
+    it('should ensure regexp matches path prefix', function (done) {
+      var app = express()
+      var p = []
 
-function checkNodeVersion(packageName) {
-  const packageJsonPath = path.resolve(
-    process.cwd(),
-    'node_modules',
-    packageName,
-    'package.json'
-  );
+      app.use(/\/api.*/, function (req, res, next) {
+        p.push('a')
+        next()
+      })
+      app.use(/api/, function (req, res, next) {
+        p.push('b')
+        next()
+      })
+      app.use(/\/test/, function (req, res, next) {
+        p.push('c')
+        next()
+      })
+      app.use(function (req, res) {
+        res.end()
+      })
 
-  if (!fs.existsSync(packageJsonPath)) {
-    return;
-  }
+      request(app)
+        .get('/test/api/1234')
+        .expect(200, function (err) {
+          if (err) return done(err)
+          assert.deepEqual(p, ['c'])
+          done()
+        })
+    })
+  })
 
-  const packageJson = require(packageJsonPath);
-  if (!packageJson.engines || !packageJson.engines.node) {
-    return;
-  }
+  describe('case sensitivity', function(){
+    it('should be disabled by default', function(done){
+      var app = express();
 
-  if (!semver.satisfies(process.version, packageJson.engines.node)) {
-    console.error(
-      chalk.red(
-        'You are running Node %s.\n' +
-          'Create React App requires Node %s or higher. \n' +
-          'Please update your version of Node.'
-      ),
-      process.version,
-      packageJson.engines.node
-    );
-    process.exit(1);
-  }
-}
-
-function checkAppName(appName) {
-  const validationResult = validateProjectName(appName);
-  if (!validationResult.validForNewPackages) {
-    console.error(
-      chalk.red(
-        `Cannot create a project named ${chalk.green(
-          `"${appName}"`
-        )} because of npm naming restrictions:\n`
-      )
-    );
-    [
-      ...(validationResult.errors || []),
-      ...(validationResult.warnings || []),
-    ].forEach(error => {
-      console.error(chalk.red(`  * ${error}`));
-    });
-    console.error(chalk.red('\nPlease choose a different project name.'));
-    process.exit(1);
-  }
-
-  // TODO: there should be a single place that holds the dependencies
-  const dependencies = ['react', 'react-dom', 'react-scripts'].sort();
-  if (dependencies.includes(appName)) {
-    console.error(
-      chalk.red(
-        `Cannot create a project named ${chalk.green(
-          `"${appName}"`
-        )} because a dependency with the same name exists.\n` +
-          `Due to the way npm works, the following names are not allowed:\n\n`
-      ) +
-        chalk.cyan(dependencies.map(depName => `  ${depName}`).join('\n')) +
-        chalk.red('\n\nPlease choose a different project name.')
-    );
-    process.exit(1);
-  }
-}
-
-function makeCaretRange(dependencies, name) {
-  const version = dependencies[name];
-
-  if (typeof version === 'undefined') {
-    console.error(chalk.red(`Missing ${name} dependency in package.json`));
-    process.exit(1);
-  }
-
-  let patchedVersion = `^${version}`;
-
-  if (!semver.validRange(patchedVersion)) {
-    console.error(
-      `Unable to patch ${name} dependency version because version ${chalk.red(
-        version
-      )} will become invalid ${chalk.red(patchedVersion)}`
-    );
-    patchedVersion = version;
-  }
-
-  dependencies[name] = patchedVersion;
-}
-
-function setCaretRangeForRuntimeDeps(packageName) {
-  const packagePath = path.join(process.cwd(), 'package.json');
-  const packageJson = require(packagePath);
-
-  if (typeof packageJson.dependencies === 'undefined') {
-    console.error(chalk.red('Missing dependencies in package.json'));
-    process.exit(1);
-  }
-
-  const packageVersion = packageJson.dependencies[packageName];
-  if (typeof packageVersion === 'undefined') {
-    console.error(chalk.red(`Unable to find ${packageName} in package.json`));
-    process.exit(1);
-  }
-
-  makeCaretRange(packageJson.dependencies, 'react');
-  makeCaretRange(packageJson.dependencies, 'react-dom');
-
-  fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + os.EOL);
-}
-
-// If project only contains files generated by GH, it’s safe.
-// Also, if project contains remnant error logs from a previous
-// installation, lets remove them now.
-// We also special case IJ-based products .idea because it integrates with CRA:
-// https://github.com/facebook/create-react-app/pull/368#issuecomment-243446094
-function isSafeToCreateProjectIn(root, name) {
-  const validFiles = [
-    '.DS_Store',
-    '.git',
-    '.gitattributes',
-    '.gitignore',
-    '.gitlab-ci.yml',
-    '.hg',
-    '.hgcheck',
-    '.hgignore',
-    '.idea',
-    '.npmignore',
-    '.travis.yml',
-    'docs',
-    'LICENSE',
-    'README.md',
-    'mkdocs.yml',
-    'Thumbs.db',
-  ];
-  // These files should be allowed to remain on a failed install, but then
-  // silently removed during the next create.
-  const errorLogFilePatterns = [
-    'npm-debug.log',
-    'yarn-error.log',
-    'yarn-debug.log',
-  ];
-  const isErrorLog = file => {
-    return errorLogFilePatterns.some(pattern => file.startsWith(pattern));
-  };
-
-  const conflicts = fs
-    .readdirSync(root)
-    .filter(file => !validFiles.includes(file))
-    // IntelliJ IDEA creates module files before CRA is launched
-    .filter(file => !/\.iml$/.test(file))
-    // Don't treat log files from previous installation as conflicts
-    .filter(file => !isErrorLog(file));
-
-  if (conflicts.length > 0) {
-    console.log(
-      `The directory ${chalk.green(name)} contains files that could conflict:`
-    );
-    console.log();
-    for (const file of conflicts) {
-      try {
-        const stats = fs.lstatSync(path.join(root, file));
-        if (stats.isDirectory()) {
-          console.log(`  ${chalk.blue(`${file}/`)}`);
-        } else {
-          console.log(`  ${file}`);
-        }
-      } catch (e) {
-        console.log(`  ${file}`);
-      }
-    }
-    console.log();
-    console.log(
-      'Either try using a new directory name, or remove the files listed above.'
-    );
-
-    return false;
-  }
-
-  // Remove any log files from a previous installation.
-  fs.readdirSync(root).forEach(file => {
-    if (isErrorLog(file)) {
-      fs.removeSync(path.join(root, file));
-    }
-  });
-  return true;
-}
-
-function getProxy() {
-  if (process.env.https_proxy) {
-    return process.env.https_proxy;
-  } else {
-    try {
-      // Trying to read https-proxy from .npmrc
-      let httpsProxy = execSync('npm config get https-proxy').toString().trim();
-      return httpsProxy !== 'null' ? httpsProxy : undefined;
-    } catch (e) {
-      return;
-    }
-  }
-}
-
-// See https://github.com/facebook/create-react-app/pull/3355
-function checkThatNpmCanReadCwd() {
-  const cwd = process.cwd();
-  let childOutput = null;
-  try {
-    // Note: intentionally using spawn over exec since
-    // the problem doesn't reproduce otherwise.
-    // `npm config list` is the only reliable way I could find
-    // to reproduce the wrong path. Just printing process.cwd()
-    // in a Node process was not enough.
-    childOutput = spawn.sync('npm', ['config', 'list']).output.join('');
-  } catch (err) {
-    // Something went wrong spawning node.
-    // Not great, but it means we can't do this check.
-    // We might fail later on, but let's continue.
-    return true;
-  }
-  if (typeof childOutput !== 'string') {
-    return true;
-  }
-  const lines = childOutput.split('\n');
-  // `npm config list` output includes the following line:
-  // "; cwd = C:\path\to\current\dir" (unquoted)
-  // I couldn't find an easier way to get it.
-  const prefix = '; cwd = ';
-  const line = lines.find(line => line.startsWith(prefix));
-  if (typeof line !== 'string') {
-    // Fail gracefully. They could remove it.
-    return true;
-  }
-  const npmCWD = line.substring(prefix.length);
-  if (npmCWD === cwd) {
-    return true;
-  }
-  console.error(
-    chalk.red(
-      `Could not start an npm process in the right directory.\n\n` +
-        `The current directory is: ${chalk.bold(cwd)}\n` +
-        `However, a newly started npm process runs in: ${chalk.bold(
-          npmCWD
-        )}\n\n` +
-        `This is probably caused by a misconfigured system terminal shell.`
-    )
-  );
-  if (process.platform === 'win32') {
-    console.error(
-      chalk.red(`On Windows, this can usually be fixed by running:\n\n`) +
-        `  ${chalk.cyan(
-          'reg'
-        )} delete "HKCU\\Software\\Microsoft\\Command Processor" /v AutoRun /f\n` +
-        `  ${chalk.cyan(
-          'reg'
-        )} delete "HKLM\\Software\\Microsoft\\Command Processor" /v AutoRun /f\n\n` +
-        chalk.red(`Try to run the above two lines in the terminal.\n`) +
-        chalk.red(
-          `To learn more about this problem, read: https://blogs.msdn.microsoft.com/oldnewthing/20071121-00/?p=24433/`
-        )
-    );
-  }
-  return false;
-}
-
-function checkIfOnline(useYarn) {
-  if (!useYarn) {
-    // Don't ping the Yarn registry.
-    // We'll just assume the best case.
-    return Promise.resolve(true);
-  }
-
-  return new Promise(resolve => {
-    dns.lookup('registry.yarnpkg.com', err => {
-      let proxy;
-      if (err != null && (proxy = getProxy())) {
-        // If a proxy is defined, we likely can't resolve external hostnames.
-        // Try to resolve the proxy name as an indication of a connection.
-        dns.lookup(url.parse(proxy).hostname, proxyErr => {
-          resolve(proxyErr == null);
-        });
-      } else {
-        resolve(err == null);
-      }
-    });
-  });
-}
-
-function executeNodeScript({ cwd, args }, data, source) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [...args, '-e', source, '--', JSON.stringify(data)],
-      { cwd, stdio: 'inherit' }
-    );
-
-    child.on('close', code => {
-      if (code !== 0) {
-        reject({
-          command: `node ${args.join(' ')}`,
-        });
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
-function checkForLatestVersion() {
-  return new Promise((resolve, reject) => {
-    https
-      .get(
-        'https://registry.npmjs.org/-/package/create-react-app/dist-tags',
-        res => {
-          if (res.statusCode === 200) {
-            let body = '';
-            res.on('data', data => (body += data));
-            res.on('end', () => {
-              resolve(JSON.parse(body).latest);
-            });
-          } else {
-            reject();
-          }
-        }
-      )
-      .on('error', () => {
-        reject();
+      app.get('/user', function(req, res){
+        res.end('tj');
       });
-  });
-}
 
-module.exports = {
-  init,
-  getTemplateInstallPackage,
-};
+      request(app)
+      .get('/USER')
+      .expect('tj', done);
+    })
+
+    describe('when "case sensitive routing" is enabled', function(){
+      it('should match identical casing', function(done){
+        var app = express();
+
+        app.enable('case sensitive routing');
+
+        app.get('/uSer', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/uSer')
+        .expect('tj', done);
+      })
+
+      it('should not match otherwise', function(done){
+        var app = express();
+
+        app.enable('case sensitive routing');
+
+        app.get('/uSer', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user')
+        .expect(404, done);
+      })
+    })
+  })
+
+  describe('params', function(){
+    it('should overwrite existing req.params by default', function(done){
+      var app = express();
+      var router = new express.Router();
+
+      router.get('/:action', function(req, res){
+        res.send(req.params);
+      });
+
+      app.use('/user/:user', router);
+
+      request(app)
+      .get('/user/1/get')
+      .expect(200, '{"action":"get"}', done);
+    })
+
+    it('should allow merging existing req.params', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get('/:action', function(req, res){
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use('/user/:user', router);
+
+      request(app)
+      .get('/user/tj/get')
+      .expect(200, '[["action","get"],["user","tj"]]', done);
+    })
+
+    it('should use params from router', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get('/:thing', function(req, res){
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use('/user/:thing', router);
+
+      request(app)
+      .get('/user/tj/get')
+      .expect(200, '[["thing","get"]]', done);
+    })
+
+    it('should merge numeric indices req.params', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get(/^\/(.*)\.(.*)/, function (req, res) {
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use(/^\/user\/id:(\d+)/, router);
+
+      request(app)
+      .get('/user/id:10/profile.json')
+      .expect(200, '[["0","10"],["1","profile"],["2","json"]]', done);
+    })
+
+    it('should merge numeric indices req.params when more in parent', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get(/\/(.*)/, function (req, res) {
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use(/^\/user\/id:(\d+)\/name:(\w+)/, router);
+
+      request(app)
+      .get('/user/id:10/name:tj/profile')
+      .expect(200, '[["0","10"],["1","tj"],["2","profile"]]', done);
+    })
+
+    it('should merge numeric indices req.params when parent has same number', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get(/\/name:(\w+)/, function(req, res){
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use(/\/user\/id:(\d+)/, router);
+
+      request(app)
+      .get('/user/id:10/name:tj')
+      .expect(200, '[["0","10"],["1","tj"]]', done);
+    })
+
+    it('should ignore invalid incoming req.params', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get('/:name', function(req, res){
+        var keys = Object.keys(req.params).sort();
+        res.send(keys.map(function(k){ return [k, req.params[k]] }));
+      });
+
+      app.use('/user/', function (req, res, next) {
+        req.params = 3; // wat?
+        router(req, res, next);
+      });
+
+      request(app)
+      .get('/user/tj')
+      .expect(200, '[["name","tj"]]', done);
+    })
+
+    it('should restore req.params', function(done){
+      var app = express();
+      var router = new express.Router({ mergeParams: true });
+
+      router.get(/\/user:(\w+)\//, function (req, res, next) {
+        next();
+      });
+
+      app.use(/\/user\/id:(\d+)/, function (req, res, next) {
+        router(req, res, function (err) {
+          var keys = Object.keys(req.params).sort();
+          res.send(keys.map(function(k){ return [k, req.params[k]] }));
+        });
+      });
+
+      request(app)
+      .get('/user/id:42/user:tj/profile')
+      .expect(200, '[["0","42"]]', done);
+    })
+  })
+
+  describe('trailing slashes', function(){
+    it('should be optional by default', function(done){
+      var app = express();
+
+      app.get('/user', function(req, res){
+        res.end('tj');
+      });
+
+      request(app)
+      .get('/user/')
+      .expect('tj', done);
+    })
+
+    describe('when "strict routing" is enabled', function(){
+      it('should match trailing slashes', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.get('/user/', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user/')
+        .expect('tj', done);
+      })
+
+      it('should pass-though middleware', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.use(function (req, res, next) {
+          res.setHeader('x-middleware', 'true');
+          next();
+        });
+
+        app.get('/user/', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user/')
+        .expect('x-middleware', 'true')
+        .expect(200, 'tj', done);
+      })
+
+      it('should pass-though mounted middleware', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.use('/user/', function (req, res, next) {
+          res.setHeader('x-middleware', 'true');
+          next();
+        });
+
+        app.get('/user/test/', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user/test/')
+        .expect('x-middleware', 'true')
+        .expect(200, 'tj', done);
+      })
+
+      it('should match no slashes', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.get('/user', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user')
+        .expect('tj', done);
+      })
+
+      it('should match middleware when omitting the trailing slash', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.use('/user/', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user')
+        .expect(200, 'tj', done);
+      })
+
+      it('should match middleware', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.use('/user', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user')
+        .expect(200, 'tj', done);
+      })
+
+      it('should match middleware when adding the trailing slash', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.use('/user', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user/')
+        .expect(200, 'tj', done);
+      })
+
+      it('should fail when omitting the trailing slash', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.get('/user/', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user')
+        .expect(404, done);
+      })
+
+      it('should fail when adding the trailing slash', function(done){
+        var app = express();
+
+        app.enable('strict routing');
+
+        app.get('/user', function(req, res){
+          res.end('tj');
+        });
+
+        request(app)
+        .get('/user/')
+        .expect(404, done);
+      })
+    })
+  })
+
+  it('should allow literal "."', function(done){
+    var app = express();
+
+    app.get('/api/users/:from..:to', function(req, res){
+      var from = req.params.from
+        , to = req.params.to;
+
+      res.end('users from ' + from + ' to ' + to);
+    });
+
+    request(app)
+    .get('/api/users/1..50')
+    .expect('users from 1 to 50', done);
+  })
+
+  describe(':name', function(){
+    it('should denote a capture group', function(done){
+      var app = express();
+
+      app.get('/user/:user', function(req, res){
+        res.end(req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj')
+      .expect('tj', done);
+    })
+
+    it('should match a single segment only', function(done){
+      var app = express();
+
+      app.get('/user/:user', function(req, res){
+        res.end(req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj/edit')
+      .expect(404, done);
+    })
+
+    it('should allow several capture groups', function(done){
+      var app = express();
+
+      app.get('/user/:user/:op', function(req, res){
+        res.end(req.params.op + 'ing ' + req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj/edit')
+      .expect('editing tj', done);
+    })
+
+    it('should work following a partial capture group', function(done){
+      var app = express();
+      var cb = after(2, done);
+
+      app.get('/user{s}/:user/:op', function(req, res){
+        res.end(req.params.op + 'ing ' + req.params.user + (req.url.startsWith('/users') ? ' (old)' : ''));
+      });
+
+      request(app)
+      .get('/user/tj/edit')
+      .expect('editing tj', cb);
+
+      request(app)
+      .get('/users/tj/edit')
+      .expect('editing tj (old)', cb);
+    })
+
+    it('should work inside literal parenthesis', function(done){
+      var app = express();
+
+      app.get('/:user\\(:op\\)', function(req, res){
+        res.end(req.params.op + 'ing ' + req.params.user);
+      });
+
+      request(app)
+      .get('/tj(edit)')
+      .expect('editing tj', done);
+    })
+
+    it('should work in array of paths', function(done){
+      var app = express();
+      var cb = after(2, done);
+
+      app.get(['/user/:user/poke', '/user/:user/pokes'], function(req, res){
+        res.end('poking ' + req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj/poke')
+      .expect('poking tj', cb);
+
+      request(app)
+      .get('/user/tj/pokes')
+      .expect('poking tj', cb);
+    })
+  })
+
+  describe(':name?', function(){
+    it('should denote an optional capture group', function(done){
+      var app = express();
+
+      app.get('/user/:user{/:op}', function(req, res){
+        var op = req.params.op || 'view';
+        res.end(op + 'ing ' + req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj')
+      .expect('viewing tj', done);
+    })
+
+    it('should populate the capture group', function(done){
+      var app = express();
+
+      app.get('/user/:user{/:op}', function(req, res){
+        var op = req.params.op || 'view';
+        res.end(op + 'ing ' + req.params.user);
+      });
+
+      request(app)
+      .get('/user/tj/edit')
+      .expect('editing tj', done);
+    })
+  })
+
+  describe(':name*', function () {
+    it('should match one segment', function (done) {
+      var app = express()
+
+      app.get('/user/*user', function (req, res) {
+        res.end(req.params.user[0])
+      })
+
+      request(app)
+        .get('/user/122')
+        .expect('122', done)
+    })
+
+    it('should match many segments', function (done) {
+      var app = express()
+
+      app.get('/user/*user', function (req, res) {
+        res.end(req.params.user.join('/'))
+      })
+
+      request(app)
+        .get('/user/1/2/3/4')
+        .expect('1/2/3/4', done)
+    })
+
+    it('should match zero segments', function (done) {
+      var app = express()
+
+      app.get('/user{/*user}', function (req, res) {
+        res.end(req.params.user)
+      })
+
+      request(app)
+        .get('/user')
+        .expect('', done)
+    })
+  })
+
+  describe(':name+', function () {
+    it('should match one segment', function (done) {
+      var app = express()
+
+      app.get('/user/*user', function (req, res) {
+        res.end(req.params.user[0])
+      })
+
+      request(app)
+        .get('/user/122')
+        .expect(200, '122', done)
+    })
+
+    it('should match many segments', function (done) {
+      var app = express()
+
+      app.get('/user/*user', function (req, res) {
+        res.end(req.params.user.join('/'))
+      })
+
+      request(app)
+        .get('/user/1/2/3/4')
+        .expect(200, '1/2/3/4', done)
+    })
+
+    it('should not match zero segments', function (done) {
+      var app = express()
+
+      app.get('/user/*user', function (req, res) {
+        res.end(req.params.user)
+      })
+
+      request(app)
+        .get('/user')
+        .expect(404, done)
+    })
+  })
+
+  describe('.:name', function(){
+    it('should denote a format', function(done){
+      var app = express();
+      var cb = after(2, done)
+
+      app.get('/:name.:format', function(req, res){
+        res.end(req.params.name + ' as ' + req.params.format);
+      });
+
+      request(app)
+        .get('/foo.json')
+        .expect(200, 'foo as json', cb)
+
+      request(app)
+        .get('/foo')
+        .expect(404, cb)
+    })
+  })
+
+  describe('.:name?', function(){
+    it('should denote an optional format', function(done){
+      var app = express();
+      var cb = after(2, done)
+
+      app.get('/:name{.:format}', function(req, res){
+        res.end(req.params.name + ' as ' + (req.params.format || 'html'));
+      });
+
+      request(app)
+        .get('/foo')
+        .expect(200, 'foo as html', cb)
+
+      request(app)
+        .get('/foo.json')
+        .expect(200, 'foo as json', cb)
+    })
+  })
+
+  describe('when next() is called', function(){
+    it('should continue lookup', function(done){
+      var app = express()
+        , calls = [];
+
+      app.get('/foo{/:bar}', function(req, res, next){
+        calls.push('/foo/:bar?');
+        next();
+      });
+
+      app.get('/bar', function () {
+        assert(0);
+      });
+
+      app.get('/foo', function(req, res, next){
+        calls.push('/foo');
+        next();
+      });
+
+      app.get('/foo', function (req, res) {
+        calls.push('/foo 2');
+        res.json(calls)
+      });
+
+      request(app)
+      .get('/foo')
+      .expect(200, ['/foo/:bar?', '/foo', '/foo 2'], done)
+    })
+  })
+
+  describe('when next("route") is called', function(){
+    it('should jump to next route', function(done){
+      var app = express()
+
+      function fn(req, res, next){
+        res.set('X-Hit', '1')
+        next('route')
+      }
+
+      app.get('/foo', fn, function (req, res) {
+        res.end('failure')
+      });
+
+      app.get('/foo', function(req, res){
+        res.end('success')
+      })
+
+      request(app)
+      .get('/foo')
+      .expect('X-Hit', '1')
+      .expect(200, 'success', done)
+    })
+  })
+
+  describe('when next("router") is called', function () {
+    it('should jump out of router', function (done) {
+      var app = express()
+      var router = express.Router()
+
+      function fn (req, res, next) {
+        res.set('X-Hit', '1')
+        next('router')
+      }
+
+      router.get('/foo', fn, function (req, res) {
+        res.end('failure')
+      })
+
+      router.get('/foo', function (req, res) {
+        res.end('failure')
+      })
+
+      app.use(router)
+
+      app.get('/foo', function (req, res) {
+        res.end('success')
+      })
+
+      request(app)
+      .get('/foo')
+      .expect('X-Hit', '1')
+      .expect(200, 'success', done)
+    })
+  })
+
+  describe('when next(err) is called', function(){
+    it('should break out of app.router', function(done){
+      var app = express()
+        , calls = [];
+
+      app.get('/foo{/:bar}', function(req, res, next){
+        calls.push('/foo/:bar?');
+        next();
+      });
+
+      app.get('/bar', function () {
+        assert(0);
+      });
+
+      app.get('/foo', function(req, res, next){
+        calls.push('/foo');
+        next(new Error('fail'));
+      });
+
+      app.get('/foo', function () {
+        assert(0);
+      });
+
+      app.use(function(err, req, res, next){
+        res.json({
+          calls: calls,
+          error: err.message
+        })
+      })
+
+      request(app)
+      .get('/foo')
+      .expect(200, { calls: ['/foo/:bar?', '/foo'], error: 'fail' }, done)
+    })
+
+    it('should call handler in same route, if exists', function(done){
+      var app = express();
+
+      function fn1(req, res, next) {
+        next(new Error('boom!'));
+      }
+
+      function fn2(req, res, next) {
+        res.send('foo here');
+      }
+
+      function fn3(err, req, res, next) {
+        res.send('route go ' + err.message);
+      }
+
+      app.get('/foo', fn1, fn2, fn3);
+
+      app.use(function (err, req, res, next) {
+        res.end('error!');
+      })
+
+      request(app)
+      .get('/foo')
+      .expect('route go boom!', done)
+    })
+  })
+
+  describePromises('promise support', function () {
+    it('should pass rejected promise value', function (done) {
+      var app = express()
+      var router = new express.Router()
+
+      router.use(function createError (req, res, next) {
+        return Promise.reject(new Error('boom!'))
+      })
+
+      router.use(function sawError (err, req, res, next) {
+        res.send('saw ' + err.name + ': ' + err.message)
+      })
+
+      app.use(router)
+
+      request(app)
+      .get('/')
+      .expect(200, 'saw Error: boom!', done)
+    })
+
+    it('should pass rejected promise without value', function (done) {
+      var app = express()
+      var router = new express.Router()
+
+      router.use(function createError (req, res, next) {
+        return Promise.reject()
+      })
+
+      router.use(function sawError (err, req, res, next) {
+        res.send('saw ' + err.name + ': ' + err.message)
+      })
+
+      app.use(router)
+
+      request(app)
+      .get('/')
+      .expect(200, 'saw Error: Rejected promise', done)
+    })
+
+    it('should ignore resolved promise', function (done) {
+      var app = express()
+      var router = new express.Router()
+
+      router.use(function createError (req, res, next) {
+        res.send('saw GET /foo')
+        return Promise.resolve('foo')
+      })
+
+      router.use(function () {
+        done(new Error('Unexpected middleware invoke'))
+      })
+
+      app.use(router)
+
+      request(app)
+      .get('/foo')
+      .expect(200, 'saw GET /foo', done)
+    })
+
+    describe('error handling', function () {
+      it('should pass rejected promise value', function (done) {
+        var app = express()
+        var router = new express.Router()
+
+        router.use(function createError (req, res, next) {
+          return Promise.reject(new Error('boom!'))
+        })
+
+        router.use(function handleError (err, req, res, next) {
+          return Promise.reject(new Error('caught: ' + err.message))
+        })
+
+        router.use(function sawError (err, req, res, next) {
+          res.send('saw ' + err.name + ': ' + err.message)
+        })
+
+        app.use(router)
+
+        request(app)
+        .get('/')
+        .expect(200, 'saw Error: caught: boom!', done)
+      })
+
+      it('should pass rejected promise without value', function (done) {
+        var app = express()
+        var router = new express.Router()
+
+        router.use(function createError (req, res, next) {
+          return Promise.reject()
+        })
+
+        router.use(function handleError (err, req, res, next) {
+          return Promise.reject(new Error('caught: ' + err.message))
+        })
+
+        router.use(function sawError (err, req, res, next) {
+          res.send('saw ' + err.name + ': ' + err.message)
+        })
+
+        app.use(router)
+
+        request(app)
+        .get('/')
+        .expect(200, 'saw Error: caught: Rejected promise', done)
+      })
+
+      it('should ignore resolved promise', function (done) {
+        var app = express()
+        var router = new express.Router()
+
+        router.use(function createError (req, res, next) {
+          return Promise.reject(new Error('boom!'))
+        })
+
+        router.use(function handleError (err, req, res, next) {
+          res.send('saw ' + err.name + ': ' + err.message)
+          return Promise.resolve('foo')
+        })
+
+        router.use(function () {
+          done(new Error('Unexpected middleware invoke'))
+        })
+
+        app.use(router)
+
+        request(app)
+        .get('/foo')
+        .expect(200, 'saw Error: boom!', done)
+      })
+    })
+  })
+
+  it('should allow rewriting of the url', function(done){
+    var app = express();
+
+    app.get('/account/edit', function(req, res, next){
+      req.user = { id: 12 }; // faux authenticated user
+      req.url = '/user/' + req.user.id + '/edit';
+      next();
+    });
+
+    app.get('/user/:id/edit', function(req, res){
+      res.send('editing user ' + req.params.id);
+    });
+
+    request(app)
+    .get('/account/edit')
+    .expect('editing user 12', done);
+  })
+
+  it('should run in order added', function(done){
+    var app = express();
+    var path = [];
+
+    app.get('/*path', function (req, res, next) {
+      path.push(0);
+      next();
+    });
+
+    app.get('/user/:id', function(req, res, next){
+      path.push(1);
+      next();
+    });
+
+    app.use(function(req, res, next){
+      path.push(2);
+      next();
+    });
+
+    app.all('/user/:id', function(req, res, next){
+      path.push(3);
+      next();
+    });
+
+    app.get('/*splat', function (req, res, next) {
+      path.push(4);
+      next();
+    });
+
+    app.use(function(req, res, next){
+      path.push(5);
+      res.end(path.join(','))
+    });
+
+    request(app)
+    .get('/user/1')
+    .expect(200, '0,1,2,3,4,5', done);
+  })
+
+  it('should be chainable', function(){
+    var app = express();
+    assert.strictEqual(app.get('/', function () {}), app)
+  })
+})

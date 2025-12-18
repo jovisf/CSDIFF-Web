@@ -3,7 +3,7 @@ Gerador de relatórios científicos.
 Gera relatórios formatados para TCC/artigos.
 
 Este módulo cria relatórios prontos para inclusão em trabalhos
-acadêmicos, com tabelas formatadas e análise comparativa.
+acadêmicos, com tabelas formatadas de performance individual e comparativa.
 """
 
 from pathlib import Path
@@ -54,158 +54,110 @@ class ReportGenerator:
 
         with open(report_path, 'w', encoding='utf-8') as f:
             # Cabeçalho
-            f.write("# Análise Comparativa - CSDiff-Web vs diff3 vs slow-diff3\n\n")
+            f.write("# Análise Experimental de Ferramentas de Merge\n\n")
             f.write(f"**Data:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
-            f.write(f"**Dataset:** {summary['dataset_info']['total_triplets']} triplas  \n")
-            f.write(f"**Ferramentas:** {', '.join(summary['dataset_info']['tools_compared'])}  \n\n")
+            f.write(f"**Total de Triplas:** {summary['dataset_info']['total_triplets']}  \n")
+            f.write(f"**Ferramentas Avaliadas:** {', '.join(summary['dataset_info']['tools'])}  \n\n")
 
             f.write("---\n\n")
 
-            # Seção 1: False Positives / False Negatives
-            if summary['fp_fn_analysis']:
-                f.write("## 1. Análise de False Positives / False Negatives\n\n")
-                f.write("Baseline: **slow-diff3** (ground truth)\n\n")
+            # ---------------------------------------------------------
+            # SEÇÃO 1: PERFORMANCE INDIVIDUAL (TABELA PRINCIPAL DO TCC)
+            # ---------------------------------------------------------
+            f.write("## 1. Performance Individual (Comparação com Gabarito)\n\n")
+            f.write("Esta tabela apresenta o desempenho de cada ferramenta comparada individualmente com o **Merge Commit (Gabarito)**.\n\n")
+            
+            f.write("| Ferramenta | Sucesso (Clean Correct) | Erro (Clean Incorrect) | Conflito | Falha |\n")
+            f.write("|------------|-------------------------|------------------------|----------|-------|\n")
 
-                for tool, metrics in summary['fp_fn_analysis'].items():
-                    f.write(f"### {tool.upper()}\n\n")
+            if 'individual_performance' in summary:
+                for tool, stats in summary['individual_performance'].items():
+                    total = stats['total'] if stats['total'] > 0 else 1
+                    
+                    # Formatar valores com porcentagem
+                    suc = f"{stats['clean_correct']} ({stats['clean_correct']/total*100:.1f}%)"
+                    err = f"{stats['clean_incorrect']} ({stats['clean_incorrect']/total*100:.1f}%)"
+                    conf = f"{stats['conflict']} ({stats['conflict']/total*100:.1f}%)"
+                    fail = f"{stats['failure']} ({stats['failure']/total*100:.1f}%)"
 
-                    # Tabela de confusão
-                    f.write("**Matriz de Confusão:**\n\n")
+                    f.write(f"| **{tool.upper()}** | {suc} | {err} | {conf} | {fail} |\n")
+            
+            f.write("\n**Definições:**\n")
+            f.write("- **Sucesso:** A ferramenta realizou o merge automaticamente e o resultado é **idêntico** ao gabarito.\n")
+            f.write("- **Erro:** A ferramenta realizou o merge automaticamente, mas o resultado é **diferente** do gabarito (Silent Mismerge).\n")
+            f.write("- **Conflito:** A ferramenta não conseguiu resolver e reportou conflito.\n")
+            f.write("- **Falha:** A ferramenta quebrou (ex: timeout, crash).\n\n")
+
+            f.write("---\n\n")
+
+            # ---------------------------------------------------------
+            # SEÇÃO 2: COMPARAÇÕES PAR A PAR
+            # ---------------------------------------------------------
+            f.write("## 2. Comparações Par a Par (Análise Relativa)\n\n")
+            f.write("Analisa onde uma ferramenta (F1) ganha ou perde em relação a outra (F2).\n\n")
+
+            if 'pairwise_comparisons' in summary:
+                for pair_key, metrics in summary['pairwise_comparisons'].items():
+                    if metrics['total_comparisons'] == 0: continue
+
+                    # Título do par (ex: CSDIFF-WEB vs MERGIRAF)
+                    f1, f2 = pair_key.split('_vs_')
+                    f.write(f"### {f1.upper()} vs {f2.upper()}\n\n")
+
                     f.write("| Métrica | Valor |\n")
                     f.write("|---------|-------|\n")
-                    f.write(f"| True Positives (TP) | {metrics['TP']} |\n")
-                    f.write(f"| False Positives (FP) | {metrics['FP']} |\n")
-                    f.write(f"| True Negatives (TN) | {metrics['TN']} |\n")
-                    f.write(f"| False Negatives (FN) | {metrics['FN']} |\n\n")
+                    f.write(f"| Total Comparado | {metrics['total_comparisons']} |\n")
+                    f.write(f"| **FP Adicional** ({f1} conflita, {f2} acerta) | {metrics['fp_adicional']} |\n")
+                    f.write(f"| **FN Adicional** ({f1} erra, {f2} conflita) | {metrics['fn_adicional']} |\n")
+                    f.write(f"| Ambos Corretos | {metrics['corretos']} |\n\n")
 
-                    # Métricas derivadas
-                    f.write("**Métricas de Performance:**\n\n")
-                    f.write("| Métrica | Valor | Interpretação |\n")
-                    f.write("|---------|-------|---------------|\n")
-                    f.write(f"| Precision | {metrics['precision']:.3f} | Proporção de conflitos detectados que são reais |\n")
-                    f.write(f"| Recall | {metrics['recall']:.3f} | Proporção de conflitos reais que foram detectados |\n")
-                    f.write(f"| F1-Score | {metrics['f1_score']:.3f} | Média harmônica entre Precision e Recall |\n")
-                    f.write(f"| Accuracy | {metrics['accuracy']:.3f} | Taxa de acertos geral |\n\n")
+            f.write("---\n\n")
 
-            # Seção 2: Comparação de Conflitos
-            if summary['conflict_comparison']:
-                f.write("## 2. Comparação de Taxa de Conflitos\n\n")
+            # ---------------------------------------------------------
+            # SEÇÃO 3: ANÁLISE DE CONFLITOS 
+            # ---------------------------------------------------------
+            f.write("## 3. Análise de Conflitos\n\n")
+            f.write("Esta seção analisa a quantidade de conflitos gerados por cada ferramenta.\n\n")
 
-                # Tabela comparativa
-                f.write("| Ferramenta | Total | Com Conflito | Sem Conflito | Taxa de Conflito |\n")
-                f.write("|------------|-------|--------------|--------------|------------------|\n")
-
-                for tool, data in summary['conflict_comparison'].items():
-                    if tool == 'reduction':
-                        continue
-
-                    f.write(f"| **{tool}** | {data['total']} | {data['with_conflict']} | {data['without_conflict']} | {data['conflict_rate']:.1f}% |\n")
-
+            if 'conflict_metrics' in summary:
+                f.write("### Métricas Gerais\n\n")
+                f.write("| Ferramenta | Total Conflitos | Média por Arquivo | Máx. Conflitos |\n")
+                f.write("|------------|-----------------|-------------------|----------------|\n")
+                
+                for tool, metrics in summary['conflict_metrics'].items():
+                    f.write(f"| {tool.upper()} | {metrics['total_conflicts']} | {metrics['avg_conflicts']:.2f} | {metrics['max_conflicts']} |\n")
                 f.write("\n")
 
-                # Redução
-                if 'reduction' in summary['conflict_comparison']:
-                    red = summary['conflict_comparison']['reduction']
-
-                    f.write("### Redução de Conflitos (CSDiff-Web vs slow-diff3)\n\n")
-                    f.write(f"- **Redução absoluta:** {red['absolute']} conflitos\n")
-                    f.write(f"- **Redução relativa:** {red['relative']:.1f}%\n\n")
-
-                    # Interpretação
-                    if red['relative'] > 0:
-                        f.write(f"✅ **CSDiff-Web reduziu {red['relative']:.1f}% dos conflitos** em relação ao slow-diff3.\n\n")
-                    elif red['relative'] < 0:
-                        f.write(f"⚠️ CSDiff-Web gerou {abs(red['relative']):.1f}% mais conflitos que slow-diff3.\n\n")
-                    else:
-                        f.write(f"➡️ CSDiff-Web teve desempenho equivalente ao slow-diff3.\n\n")
-
-            # Seção 3: Distribuição de Conflitos
-            if summary['conflict_distribution']:
-                f.write("## 3. Distribuição de Conflitos\n\n")
-
-                f.write("Número de conflitos por tripla:\n\n")
-                f.write("| Ferramenta | 0 | 1 | 2 | 3+ |\n")
-                f.write("|------------|---|---|---|----|\n")
+            if 'conflict_distribution' in summary:
+                f.write("### Distribuição de Conflitos (Quantidade de Arquivos)\n\n")
+                f.write("| Ferramenta | 0 Conflitos (Limpo) | 1 Conflito | 2 Conflitos | 3+ Conflitos |\n")
+                f.write("|------------|---------------------|------------|-------------|--------------|\n")
 
                 for tool, dist in summary['conflict_distribution'].items():
-                    counts = [str(dist.get(str(i), 0)) for i in range(3)]
-                    counts.append(str(dist.get('3+', 0)))
-                    f.write(f"| **{tool}** | {' | '.join(counts)} |\n")
+                    f.write(f"| {tool.upper()} | {dist['0']} | {dist['1']} | {dist['2']} | {dist['3+']} |\n")
+            
+            f.write("\n---\n\n")
 
-                f.write("\n")
+            # ---------------------------------------------------------
+            # SEÇÃO 4: TEMPO DE EXECUÇÃO
+            # ---------------------------------------------------------
+            f.write("## 4. Tempo de Execução\n\n")
+            f.write("| Ferramenta | Média (s) | Min (s) | Max (s) |\n")
+            f.write("|------------|-----------|---------|---------|\n")
 
-            # Seção 4: Tempo de Execução
-            if summary['execution_time']:
-                f.write("## 4. Análise de Performance (Tempo de Execução)\n\n")
+            if 'execution_time' in summary:
+                for tool, times in summary['execution_time'].items():
+                    f.write(f"| {tool} | {times['mean']:.4f} | {times['min']:.4f} | {times['max']:.4f} |\n")
 
-                f.write("| Ferramenta | Média (s) | Mediana (s) | Desvio Padrão | Min/Max (s) |\n")
-                f.write("|------------|-----------|-------------|---------------|-------------|\n")
-
-                for tool, data in summary['execution_time'].items():
-                    f.write(f"| **{tool}** | {data['mean']:.4f} | {data['median']:.4f} | {data['std']:.4f} | {data['min']:.4f} / {data['max']:.4f} |\n")
-
-                f.write("\n")
-
-                # Comparação de performance
-                if 'csdiff-web' in summary['execution_time'] and 'slow-diff3' in summary['execution_time']:
-                    csdiff_time = summary['execution_time']['csdiff-web']['mean']
-                    slow_time = summary['execution_time']['slow-diff3']['mean']
-                    overhead = ((csdiff_time - slow_time) / slow_time * 100) if slow_time > 0 else 0
-
-                    f.write("### Overhead de Performance\n\n")
-                    f.write(f"- **slow-diff3 médio:** {slow_time:.4f}s\n")
-                    f.write(f"- **CSDiff-Web médio:** {csdiff_time:.4f}s\n")
-                    f.write(f"- **Overhead:** {overhead:+.1f}%\n\n")
-
-            # Seção 5: Conclusões
-            f.write("## 5. Conclusões\n\n")
-
-            # Auto-gerar conclusões baseadas nos dados
-            conclusions = []
-
-            # Conclusão 1: Redução de conflitos
-            if 'reduction' in summary.get('conflict_comparison', {}):
-                red_pct = summary['conflict_comparison']['reduction']['relative']
-                if red_pct > 10:
-                    conclusions.append(f"1. **CSDiff-Web demonstrou redução significativa de {red_pct:.1f}% nos conflitos** em relação ao slow-diff3, validando a eficácia da abordagem baseada em separadores sintáticos.")
-                elif red_pct > 0:
-                    conclusions.append(f"1. CSDiff-Web apresentou redução moderada de {red_pct:.1f}% nos conflitos.")
-                else:
-                    conclusions.append(f"1. CSDiff-Web teve desempenho similar ao slow-diff3 em termos de conflitos ({red_pct:.1f}% de variação).")
-
-            # Conclusão 2: Precisão
-            if summary.get('fp_fn_analysis', {}).get('csdiff-web'):
-                precision = summary['fp_fn_analysis']['csdiff-web']['precision']
-                if precision >= 0.90:
-                    conclusions.append(f"2. **Alta precisão** ({precision:.3f}) indica que CSDiff-Web gera poucos falsos positivos.")
-                elif precision >= 0.70:
-                    conclusions.append(f"2. Precisão moderada ({precision:.3f}) com espaço para melhoria na redução de falsos positivos.")
-                else:
-                    conclusions.append(f"2. Precisão baixa ({precision:.3f}) indica necessidade de ajustes no algoritmo.")
-
-            # Conclusão 3: Performance
-            if 'csdiff-web' in summary.get('execution_time', {}) and 'slow-diff3' in summary.get('execution_time', {}):
-                overhead = ((summary['execution_time']['csdiff-web']['mean'] - summary['execution_time']['slow-diff3']['mean']) / summary['execution_time']['slow-diff3']['mean'] * 100)
-                if overhead < 50:
-                    conclusions.append(f"3. **Overhead de performance aceitável** ({overhead:+.1f}%), tornando CSDiff-Web viável para uso prático.")
-                else:
-                    conclusions.append(f"3. Overhead de performance significativo ({overhead:+.1f}%) pode limitar uso em cenários críticos.")
-
-            for conclusion in conclusions:
-                f.write(f"{conclusion}\n\n")
-
-            # Rodapé
-            f.write("---\n\n")
-            f.write("**Gerado por:** CSDiff-Web Analyzer  \n")
-            f.write("**Projeto:** TCC - Universidade Federal de Pernambuco  \n")
-            f.write("**Orientador:** Prof. Paulo Borba  \n")
+            f.write("\n---\n")
+            f.write("**Gerado por:** CSDiff-Web Analyzer\n")
 
         logger.info(f"Relatório Markdown gerado: {report_path}")
         return report_path
 
     def generate_latex_table(self, summary: Dict, filename: str = None) -> Path:
         """
-        Gera tabela em LaTeX (para inclusão em artigos/TCC).
+        Gera tabela em LaTeX da Performance Individual (para TCC).
 
         Args:
             summary: Dict de análise
@@ -216,28 +168,27 @@ class ReportGenerator:
         """
         if filename is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'table_{timestamp}.tex'
+            filename = f'table_individual_performance_{timestamp}.tex'
 
         table_path = self.output_dir / filename
 
         with open(table_path, 'w', encoding='utf-8') as f:
-            # Tabela comparativa de conflitos
-            f.write("% Tabela comparativa - CSDiff-Web vs slow-diff3\n")
+            f.write("% Tabela de Performance Individual das Ferramentas\n")
             f.write("\\begin{table}[htbp]\n")
             f.write("\\centering\n")
-            f.write("\\caption{Comparação de Conflitos entre Ferramentas}\n")
-            f.write("\\label{tab:conflict_comparison}\n")
-            f.write("\\begin{tabular}{lrrr}\n")
+            f.write("\\caption{Performance das Ferramentas em relação ao Gabarito}\n")
+            f.write("\\label{tab:tool_performance}\n")
+            f.write("\\begin{tabular}{lrrrr}\n")
             f.write("\\hline\n")
-            f.write("\\textbf{Ferramenta} & \\textbf{Total} & \\textbf{Com Conflito} & \\textbf{Taxa (\\%)} \\\\\n")
+            f.write("\\textbf{Ferramenta} & \\textbf{Sucesso} & \\textbf{Erro} & \\textbf{Conflito} & \\textbf{Falha} \\\\\n")
             f.write("\\hline\n")
 
-            if summary.get('conflict_comparison'):
-                for tool, data in summary['conflict_comparison'].items():
-                    if tool == 'reduction':
-                        continue
-
-                    f.write(f"{tool} & {data['total']} & {data['with_conflict']} & {data['conflict_rate']:.1f} \\\\\n")
+            if 'individual_performance' in summary:
+                for tool, stats in summary['individual_performance'].items():
+                    # Escapar underscores para LaTeX (ex: csdiff_web -> csdiff\_web)
+                    tool_name = tool.replace('_', '\\_').upper()
+                    
+                    f.write(f"{tool_name} & {stats['clean_correct']} & {stats['clean_incorrect']} & {stats['conflict']} & {stats['failure']} \\\\\n")
 
             f.write("\\hline\n")
             f.write("\\end{tabular}\n")

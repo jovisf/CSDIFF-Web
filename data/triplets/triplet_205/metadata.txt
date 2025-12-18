@@ -1,0 +1,13 @@
+Triplet ID: 205
+Original File: app/zion-ai-translator-pro/page.tsx
+Extension: .tsx
+Commit SHA: 7235ed903034e448a72e680ce8c44a00258ecaf2
+Base SHA: db3d98011a4b56b76e86f406db5313caa4190c38
+Left SHA: 328736f7ee57db8b2fb2d6e41fdd5af98055947b
+Right SHA: c86723cb1efe11c7e3bd960146a7f05bf711916f
+
+File Sizes:
+  Base:   1265 bytes
+  Left:   200 bytes
+  Right:  200 bytes
+  Merged: 200 bytes (GABARITO)

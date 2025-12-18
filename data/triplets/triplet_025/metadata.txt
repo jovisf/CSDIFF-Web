@@ -1,12 +1,13 @@
 Triplet ID: 25
-Original File: test/typescript/injectedDispatch.ts
-Extension: .ts
-Commit SHA: b24dd683231621cb7e61b2c1320984163adcde6f
-Base SHA: d4d08d0438711ea7528fc3c5c11da00cd120a991
-Left SHA: abaabba00e60e026d5b0573a19974c90183f6abd
-Right SHA: 957aed6e23624113b4d0ff6d9f277f25fca90b38
+Original File: app/components/AdvancedSEOOptimizer_new.tsx
+Extension: .tsx
+Commit SHA: 7235ed903034e448a72e680ce8c44a00258ecaf2
+Base SHA: db3d98011a4b56b76e86f406db5313caa4190c38
+Left SHA: 328736f7ee57db8b2fb2d6e41fdd5af98055947b
+Right SHA: c86723cb1efe11c7e3bd960146a7f05bf711916f
 
 File Sizes:
-  Base: 1904 bytes
-  Left: 1909 bytes
-  Right: 1904 bytes
+  Base:   311 bytes
+  Left:   250 bytes
+  Right:  250 bytes
+  Merged: 250 bytes (GABARITO)

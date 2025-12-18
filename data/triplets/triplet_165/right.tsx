@@ -1,36 +1,10 @@
-import * as React from 'react';
-import { createTheme, Theme, ThemeProvider } from '@mui/material/styles';
-import Checkbox from '@mui/material/Checkbox';
-import { green, orange } from '@mui/material/colors';
+import React from 'react';
 
-const outerTheme = createTheme({
-  palette: {
-    secondary: {
-      main: orange[500],
-    },
-  },
-});
-
-export default function ThemeNestingExtend() {
+export default function HomePage() {
   return (
-    <ThemeProvider theme={outerTheme}>
-      <Checkbox defaultChecked color="secondary" />
-      <ThemeProvider
-        theme={(theme: Theme) =>
-          createTheme({
-            ...theme,
-            palette: {
-              ...theme.palette,
-              primary: {
-                main: green[500],
-              },
-            },
-          })
-        }
-      >
-        <Checkbox defaultChecked />
-        <Checkbox defaultChecked color="secondary" />
-      </ThemeProvider>
-    </ThemeProvider>
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
   );
 }

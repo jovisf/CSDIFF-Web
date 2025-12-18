@@ -1,116 +1,57 @@
-import 'isomorphic-fetch';
-import React from 'react';
-import PropTypes from 'prop-types';
-import orderBy from 'lodash/orderBy';
-import sortedUniqBy from 'lodash/sortedUniqBy';
-import { withStyles } from '@material-ui/core/styles';
-import Table from '@material-ui/core/Table';
-import TableBody from '@material-ui/core/TableBody';
-import TableCell from '@material-ui/core/TableCell';
-import TableRow from '@material-ui/core/TableRow';
-import Paper from '@material-ui/core/Paper';
-import Typography from '@material-ui/core/Typography';
-import Link from 'docs/src/modules/components/Link';
-
-const GITHUB_RELEASE_BASE_URL = 'https://github.com/mui-org/material-ui/releases/tag/';
-
-const styles = {
-  root: {
-    height: 410,
-    overflow: 'auto',
-    width: '100%',
-  },
-};
-
-let cacheBranches = null;
-
-async function getBranches() {
-  try {
-    if (!cacheBranches) {
-      const result = await fetch('https://api.github.com/repos/mui-org/material-ui-docs/branches');
-      cacheBranches = await result.json();
+const withErrorLogging = (handler) => {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (error) {
+      console.error('API Error:', error);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Internal server error' }));
     }
-  } catch (err) {
-    // Swallow the exceptions.
-  }
-
-  cacheBranches = cacheBranches || [];
-  return cacheBranches;
-}
-
-class StableVersions extends React.Component {
-  state = {
-    docs: [],
   };
-
-  async componentDidMount() {
-    const branches = await getBranches();
-    let docs = branches.map(n => n.name);
-    docs = docs.filter(version => version !== 'latest');
-    docs = docs.map(version => ({
-      version,
-      // Replace dot with dashes for Netlify branch subdomains
-      url: `https://${version.replace(/\./g, '-')}.mui.com`,
-    }));
-    // Current version.
-    docs.push({
-      version: `v${process.env.LIB_VERSION}`,
-      url: document.location.origin,
-    });
-    // Legacy documentation.
-    docs.push({
-      version: 'v0.20.1',
-      url: 'https://v0.mui.com',
-    });
-    docs = orderBy(docs, 'version', 'desc');
-    docs = sortedUniqBy(docs, 'version');
-    // The latest version is always using the naked domain.
-    docs[0].url = 'https://v3.mui.com';
-    this.setState({ docs });
-  }
-
-  render() {
-    const { classes } = this.props;
-    const { docs } = this.state;
-
-    return (
-      <Paper className={classes.root}>
-        <Table>
-          <TableBody>
-            {docs.map(doc => (
-              <TableRow key={doc.version}>
-                <TableCell padding="dense">
-                  <Typography variant="body2">
-                    {doc.version}
-                    {doc.version === `v${process.env.LIB_VERSION}` ? ' ✓' : ''}
-                  </Typography>
-                </TableCell>
-                <TableCell padding="dense">
-                  <Link variant="body2" color="secondary" rel="nofollow" href={doc.url}>
-                    Documentation
-                  </Link>
-                </TableCell>
-                <TableCell padding="dense">
-                  <Link
-                    variant="body2"
-                    color="secondary"
-                    rel="nofollow"
-                    href={`${GITHUB_RELEASE_BASE_URL}${doc.version}`}
-                  >
-                    Release notes
-                  </Link>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
-    );
-  }
-}
-
-StableVersions.propTypes = {
-  classes: PropTypes.object.isRequired,
 };
 
-export default withStyles(styles)(StableVersions);
+const handler = async (req, res) => {
+
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+  const { productId, userId } = req.body || {};
+  if (!productId) {
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Product ID is required' }));
+    return;
+  }
+  try {
+    // Basic checkout session creation logic
+    const sessionData = {
+      productId,
+      userId: userId || null,
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+      success: true, 
+      sessionId: `session_${Date.now()}`,
+      data: sessionData
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ 
+      sessionId: `session_${Date.now()}`,
+      ...sessionData
+    }));
+  } catch (error) {
+    console.error('Checkout session creation error:', error);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ 
+      error: 'Failed to create checkout session'
+    }));
+  }
+};
+
+export default withErrorLogging(handler);
+

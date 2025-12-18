@@ -1,201 +1,132 @@
-import type { Action } from './types/actions'
-import type {
-  ActionFromReducersMapObject,
-  PreloadedStateShapeFromReducersMapObject,
-  Reducer,
-  StateFromReducersMapObject
-} from './types/reducers'
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
-import ActionTypes from './utils/actionTypes'
-import isPlainObject from './utils/isPlainObject'
-import warning from './utils/warning'
-import { kindOf } from './utils/kindOf'
-
-function getUnexpectedStateShapeWarningMessage(
-  inputState: object,
-  reducers: { [key: string]: Reducer<any, any, any> },
-  action: Action,
-  unexpectedKeyCache: { [key: string]: true }
-) {
-  const reducerKeys = Object.keys(reducers)
-  const argumentName =
-    action && action.type === ActionTypes.INIT
-      ? 'preloadedState argument passed to createStore'
-      : 'previous state received by the reducer'
-
-  if (reducerKeys.length === 0) {
-    return (
-      'Store does not have a valid reducer. Make sure the argument passed ' +
-      'to combineReducers is an object whose values are reducers.'
-    )
-  }
-
-  if (!isPlainObject(inputState)) {
-    return (
-      `The ${argumentName} has unexpected type of "${kindOf(
-        inputState
-      )}". Expected argument to be an object with the following ` +
-      `keys: "${reducerKeys.join('", "')}"`
-    )
-  }
-
-  const unexpectedKeys = Object.keys(inputState).filter(
-    key => !reducers.hasOwnProperty(key) && !unexpectedKeyCache[key]
-  )
-
-  unexpectedKeys.forEach(key => {
-    unexpectedKeyCache[key] = true
-  })
-
-  if (action && action.type === ActionTypes.REPLACE) return
-
-  if (unexpectedKeys.length > 0) {
-    return (
-      `Unexpected ${unexpectedKeys.length > 1 ? 'keys' : 'key'} ` +
-      `"${unexpectedKeys.join('", "')}" found in ${argumentName}. ` +
-      `Expected to find one of the known reducer keys instead: ` +
-      `"${reducerKeys.join('", "')}". Unexpected keys will be ignored.`
-    )
-  }
-}
-
-function assertReducerShape(reducers: {
-  [key: string]: Reducer<any, any, any>
-}) {
-  Object.keys(reducers).forEach(key => {
-    const reducer = reducers[key]
-    const initialState = reducer(undefined, { type: ActionTypes.INIT })
-
-    if (typeof initialState === 'undefined') {
-      throw new Error(
-        `The slice reducer for key "${key}" returned undefined during initialization. ` +
-          `If the state passed to the reducer is undefined, you must ` +
-          `explicitly return the initial state. The initial state may ` +
-          `not be undefined. If you don't want to set a value for this reducer, ` +
-          `you can use null instead of undefined.`
-      )
-    }
-
-    if (
-      typeof reducer(undefined, {
-        type: ActionTypes.PROBE_UNKNOWN_ACTION()
-      }) === 'undefined'
-    ) {
-      throw new Error(
-        `The slice reducer for key "${key}" returned undefined when probed with a random type. ` +
-          `Don't try to handle '${ActionTypes.INIT}' or other actions in "redux/*" ` +
-          `namespace. They are considered private. Instead, you must return the ` +
-          `current state for any unknown actions, unless it is undefined, ` +
-          `in which case you must return the initial state, regardless of the ` +
-          `action type. The initial state may not be undefined, but can be null.`
-      )
-    }
-  })
-}
+import {Effect, ValueKind} from '..';
+import {TypeConfig} from './TypeSchema';
 
 /**
- * Turns an object whose values are different reducer functions, into a single
- * reducer function. It will call every child reducer, and gather their results
- * into a single state object, whose keys correspond to the keys of the passed
- * reducer functions.
+ * Libraries developed before we officially documented the [Rules of React](https://react.dev/reference/rules)
+ * implement APIs which cannot be memoized safely, either via manual or automatic memoization.
  *
- * @template S Combined state object type.
+ * Any non-hook API that is designed to be called during render (not events/effects) should be safe to memoize:
  *
- * @param reducers An object whose values correspond to different reducer
- *   functions that need to be combined into one. One handy way to obtain it
- *   is to use ES6 `import * as reducers` syntax. The reducers may never
- *   return undefined for any action. Instead, they should return their
- *   initial state if the state passed to them was undefined, and the current
- *   state for any unrecognized action.
+ * ```js
+ * function Component() {
+ *   const {someFunction} = useLibrary();
+ *   // it should always be safe to memoize functions like this
+ *  const result = useMemo(() => someFunction(), [someFunction]);
+ * }
+ * ```
  *
- * @returns A reducer function that invokes every reducer inside the passed
- *   object, and builds a state object with the same shape.
+ * However, some APIs implement "interior mutability" — mutating values rather than copying into a new value
+ * and setting state with the new value. Such functions (`someFunction()` in the example) could return different
+ * values even though the function itself is the same object. This breaks memoization, since React relies on
+ * the outer object (or function) changing if part of its value has changed.
+ *
+ * Given that we didn't have the Rules of React precisely documented prior to the introduction of React compiler,
+ * it's understandable that some libraries accidentally shipped APIs that break this rule. However, developers
+ * can easily run into pitfalls with these APIs. They may manually memoize them, which can break their app. Or
+ * they may try using React Compiler, and think that the compiler has broken their code.
+ *
+ * To help ensure that developers can successfully use the compiler with existing code, this file teaches the
+ * compiler about specific APIs that are known to be incompatible with memoization. We've tried to be as precise
+ * as possible.
+ *
+ * The React team is open to collaborating with library authors to help develop compatible versions of these APIs,
+ * and we have already reached out to the teams who own any API listed here to ensure they are aware of the issue.
  */
-export default function combineReducers<M>(
-  reducers: M
-): M[keyof M] extends Reducer<any, any, any> | undefined
-  ? Reducer<
-      StateFromReducersMapObject<M>,
-      ActionFromReducersMapObject<M>,
-      Partial<PreloadedStateShapeFromReducersMapObject<M>>
-    >
-  : never
-export default function combineReducers(reducers: {
-  [key: string]: Reducer<any, any, any>
-}) {
-  const reducerKeys = Object.keys(reducers)
-  const finalReducers: { [key: string]: Reducer<any, any, any> } = {}
-  for (let i = 0; i < reducerKeys.length; i++) {
-    const key = reducerKeys[i]
 
-    if (process.env.NODE_ENV !== 'production') {
-      if (typeof reducers[key] === 'undefined') {
-        warning(`No reducer provided for key "${key}"`)
-      }
+const RELAY_HOOK_TYPE: TypeConfig = {
+  kind: 'hook',
+  positionalParams: [],
+  restParam: Effect.Freeze,
+  returnType: {kind: 'type', name: 'BuiltInUseFragment'},
+  returnValueKind: ValueKind.Frozen,
+  noAlias: true,
+};
+
+export function defaultModuleTypeProvider(
+  moduleName: string,
+): TypeConfig | null {
+  switch (moduleName) {
+    case 'react-relay':
+    case 'shared-runtime': {
+      return {
+        kind: 'object',
+        properties: {
+          useFragment: RELAY_HOOK_TYPE,
+          usePaginationFragment: RELAY_HOOK_TYPE,
+          useRefetchableFragment: RELAY_HOOK_TYPE,
+          useLazyLoadQuery: RELAY_HOOK_TYPE,
+          usePreloadedQuery: RELAY_HOOK_TYPE,
+        },
+      };
     }
-
-    if (typeof reducers[key] === 'function') {
-      finalReducers[key] = reducers[key]
+    case 'react-hook-form': {
+      return {
+        kind: 'object',
+        properties: {
+          useForm: {
+            kind: 'hook',
+            returnType: {
+              kind: 'object',
+              properties: {
+                // Only the `watch()` function returned by react-hook-form's `useForm()` API is incompatible
+                watch: {
+                  kind: 'function',
+                  positionalParams: [],
+                  restParam: Effect.Read,
+                  calleeEffect: Effect.Read,
+                  returnType: {kind: 'type', name: 'Any'},
+                  returnValueKind: ValueKind.Mutable,
+                  knownIncompatible: `React Hook Form's \`useForm()\` API returns a \`watch()\` function which cannot be memoized safely.`,
+                },
+              },
+            },
+          },
+        },
+      };
+    }
+    case '@tanstack/react-table': {
+      return {
+        kind: 'object',
+        properties: {
+          /*
+           * Many of the properties of `useReactTable()`'s return value are incompatible, so we mark the entire hook
+           * as incompatible
+           */
+          useReactTable: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            knownIncompatible: `TanStack Table's \`useReactTable()\` API returns functions that cannot be memoized safely`,
+          },
+        },
+      };
+    }
+    case '@tanstack/react-virtual': {
+      return {
+        kind: 'object',
+        properties: {
+          /*
+           * Many of the properties of `useVirtualizer()`'s return value are incompatible, so we mark the entire hook
+           * as incompatible
+           */
+          useVirtualizer: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            knownIncompatible: `TanStack Virtual's \`useVirtualizer()\` API returns functions that cannot be memoized safely`,
+          },
+        },
+      };
     }
   }
-  const finalReducerKeys = Object.keys(finalReducers)
-
-  // This is used to make sure we don't warn about the same
-  // keys multiple times.
-  let unexpectedKeyCache: { [key: string]: true }
-  if (process.env.NODE_ENV !== 'production') {
-    unexpectedKeyCache = {}
-  }
-
-  let shapeAssertionError: unknown
-  try {
-    assertReducerShape(finalReducers)
-  } catch (e) {
-    shapeAssertionError = e
-  }
-
-  return function combination(
-    state: StateFromReducersMapObject<typeof reducers> = {},
-    action: Action
-  ) {
-    if (shapeAssertionError) {
-      throw shapeAssertionError
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-      const warningMessage = getUnexpectedStateShapeWarningMessage(
-        state,
-        finalReducers,
-        action,
-        unexpectedKeyCache
-      )
-      if (warningMessage) {
-        warning(warningMessage)
-      }
-    }
-
-    let hasChanged = false
-    const nextState: StateFromReducersMapObject<typeof reducers> = {}
-    for (let i = 0; i < finalReducerKeys.length; i++) {
-      const key = finalReducerKeys[i]
-      const reducer = finalReducers[key]
-      const previousStateForKey = state[key]
-      const nextStateForKey = reducer(previousStateForKey, action)
-      if (typeof nextStateForKey === 'undefined') {
-        const actionType = action && action.type
-        throw new Error(
-          `When called with an action of type ${
-            actionType ? `"${String(actionType)}"` : '(unknown type)'
-          }, the slice reducer for key "${key}" returned undefined. ` +
-            `To ignore an action, you must explicitly return the previous state. ` +
-            `If you want this reducer to hold no value, you can return null instead of undefined.`
-        )
-      }
-      nextState[key] = nextStateForKey
-      hasChanged = hasChanged || nextStateForKey !== previousStateForKey
-    }
-    hasChanged =
-      hasChanged || finalReducerKeys.length !== Object.keys(state).length
-    return hasChanged ? nextState : state
-  }
+  return null;
 }

@@ -1,37 +1,37 @@
-import React from 'react';
-import styled, { ThemeProvider } from 'styled-components';
-import NoSsr from '@material-ui/core/NoSsr';
-import { createMuiTheme } from '@material-ui/core/styles';
-import {
-  palette,
-  PaletteProps,
-  spacing,
-  SpacingProps,
-  typography,
-  TypographyProps,
-} from '@material-ui/system';
+'use client';
+<<<<<<< HEAD
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';;
+=======
 
-const Box = styled.div<
-  PaletteProps & SpacingProps & TypographyProps
->`${palette}${spacing}${typography}`;
-// or import Box from '@material-ui/core/Box';
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight, } from 'lucide-react';
+>>>>>>> origin/main
+import Footer from '../components/Footer';
 
-const theme = createMuiTheme();
-
-export default function Demo() {
+export default function GdprPage() {
+  
   return (
-    <NoSsr>
-      <ThemeProvider theme={theme}>
-        <Box
-          color="primary.main"
-          bgcolor="background.paper"
-          fontFamily="h6.fontFamily"
-          fontSize={{ xs: 'h6.fontSize', sm: 'h4.fontSize', md: 'h3.fontSize' }}
-          p={{ xs: 2, sm: 3, md: 4 }}
-        >
-          @material-ui/system
-        </Box>
-      </ThemeProvider>
-    </NoSsr>
+        <div>
+      <Head>
+        <title>Gdpr - Zion Tech Group</title>
+        <meta name="description" content="Professional services by Zion Tech Group." />
+      </Head>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <h1>Gdpr - Zion Tech Group</h1>
+          <p>Professional gdpr - zion tech group services coming soon.</p>
+          <Link href="/contact"
+            className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center mx-auto w-fit"
+          >
+            Contact Us
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Link>
+            </div>
+          </div>
+      <Footer />
+        </div>
   );
 }

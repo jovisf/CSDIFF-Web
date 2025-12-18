@@ -1,12 +1,13 @@
 Triplet ID: 130
-Original File: docs/src/pages/landing/Users.js
-Extension: .js
-Commit SHA: 512896973499adbbda057e7f3685d1b23cc02de9
-Base SHA: d0bfcb4f11fd3904b1e235d80fbfe23758de8372
-Left SHA: cd8aeb64a9038ae9cb8ecf1cd7fd8a2bfea2d6b6
-Right SHA: 7e97b7f366cc96d46ea81a7cef854cca576cde1b
+Original File: app/components/PerformanceDashboard.tsx
+Extension: .tsx
+Commit SHA: 7235ed903034e448a72e680ce8c44a00258ecaf2
+Base SHA: db3d98011a4b56b76e86f406db5313caa4190c38
+Left SHA: 328736f7ee57db8b2fb2d6e41fdd5af98055947b
+Right SHA: c86723cb1efe11c7e3bd960146a7f05bf711916f
 
 File Sizes:
-  Base: 4132 bytes
-  Left: 4090 bytes
-  Right: 4052 bytes
+  Base:   2141 bytes
+  Left:   209 bytes
+  Right:  209 bytes
+  Merged: 209 bytes (GABARITO)

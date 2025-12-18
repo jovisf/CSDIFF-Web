@@ -1,394 +1,639 @@
-/* eslint-disable no-console */
+import { uniqueId } from 'lodash';
+
+import { config, getDataSourceSrv } from '@grafana/runtime';
 import {
-  createStore,
-  combineReducers,
-  Reducer,
-  AnyAction,
-  __DO_NOT_USE__ActionTypes as ActionTypes,
-  CombinedState
-} from '..'
+  AdHocFiltersVariable,
+  behaviors,
+  ConstantVariable,
+  CustomVariable,
+  DataSourceVariable,
+  GroupByVariable,
+  IntervalVariable,
+  QueryVariable,
+  SceneRefreshPicker,
+  SceneTimePicker,
+  SceneTimeRange,
+  SceneVariable,
+  SceneVariableSet,
+  ScopesVariable,
+  SwitchVariable,
+  TextBoxVariable,
+} from '@grafana/scenes';
+import {
+  AdhocVariableKind,
+  ConstantVariableKind,
+  CustomVariableKind,
+  Spec as DashboardV2Spec,
+  DatasourceVariableKind,
+  defaultAdhocVariableKind,
+  defaultConstantVariableKind,
+  defaultCustomVariableKind,
+  defaultDatasourceVariableKind,
+  defaultGroupByVariableKind,
+  defaultIntervalVariableKind,
+  defaultQueryVariableKind,
+  defaultTextVariableKind,
+  defaultSwitchVariableKind,
+  defaultTimeSettingsSpec,
+  GroupByVariableKind,
+  IntervalVariableKind,
+  LibraryPanelKind,
+  PanelKind,
+  QueryVariableKind,
+  SwitchVariableKind,
+  TextVariableKind,
+  defaultDataQueryKind,
+  AnnotationQueryKind,
+} from '@grafana/schema/dist/esm/schema/dashboard/v2';
+import { DEFAULT_ANNOTATION_COLOR } from '@grafana/ui';
+import {
+  AnnoKeyCreatedBy,
+  AnnoKeyFolder,
+  AnnoKeyUpdatedBy,
+  AnnoKeyUpdatedTimestamp,
+  AnnoKeyDashboardIsSnapshot,
+  DeprecatedInternalId,
+  AnnoKeyEmbedded,
+} from 'app/features/apiserver/types';
+import { DashboardWithAccessInfo } from 'app/features/dashboard/api/types';
+import {
+  getDashboardSceneProfilerWithMetadata,
+  enablePanelProfilingForDashboard,
+  getDashboardComponentInteractionCallback,
+} from 'app/features/dashboard/services/DashboardProfiler';
+import { DashboardMeta } from 'app/types/dashboard';
 
-describe('Utils', () => {
-  describe('combineReducers', () => {
-    it('returns a composite reducer that maps the state keys to given reducers', () => {
-      const reducer = combineReducers({
-        counter: (state: number = 0, action) =>
-          action.type === 'increment' ? state + 1 : state,
-        stack: (state: any[] = [], action) =>
-          action.type === 'push' ? [...state, action.value] : state
-      })
+import { addPanelsOnLoadBehavior } from '../addToDashboard/addPanelsOnLoadBehavior';
+import { dashboardAnalyticsInitializer } from '../behaviors/DashboardAnalyticsInitializerBehavior';
+import { AlertStatesDataLayer } from '../scene/AlertStatesDataLayer';
+import { DashboardAnnotationsDataLayer } from '../scene/DashboardAnnotationsDataLayer';
+import { DashboardControls } from '../scene/DashboardControls';
+import { DashboardDataLayerSet } from '../scene/DashboardDataLayerSet';
+import { registerDashboardMacro } from '../scene/DashboardMacro';
+import { DashboardReloadBehavior } from '../scene/DashboardReloadBehavior';
+import { DashboardScene } from '../scene/DashboardScene';
+import { DashboardLayoutManager } from '../scene/types/DashboardLayoutManager';
+import { getIntervalsFromQueryString } from '../utils/utils';
 
-      const s1 = reducer(undefined, { type: 'increment' })
-      expect(s1).toEqual({ counter: 1, stack: [] })
-      const s2 = reducer(s1, { type: 'push', value: 'a' })
-      expect(s2).toEqual({ counter: 1, stack: ['a'] })
-    })
+import { transformV2ToV1AnnotationQuery } from './annotations';
+import { SnapshotVariable } from './custom-variables/SnapshotVariable';
+import { layoutDeserializerRegistry } from './layoutSerializers/layoutSerializerRegistry';
+import { getDataSourceForQuery, getRuntimeVariableDataSource } from './layoutSerializers/utils';
+import { registerPanelInteractionsReporter } from './transformSaveModelToScene';
+import {
+  transformCursorSyncV2ToV1,
+  transformSortVariableToEnumV1,
+  transformVariableHideToEnumV1,
+  transformVariableRefreshToEnumV1,
+} from './transformToV1TypesUtils';
+import { LEGACY_STRING_VALUE_KEY } from './transformToV2TypesUtils';
 
-    it('ignores all props which are not a function', () => {
-      // we double-cast because these conditions can only happen in a javascript setting
-      const reducer = combineReducers({
-        fake: true as unknown as Reducer,
-        broken: 'string' as unknown as Reducer,
-        another: { nested: 'object' } as unknown as Reducer,
-        stack: (state = []) => state
-      })
+const DEFAULT_DATASOURCE = 'default';
 
-      expect(Object.keys(reducer(undefined, { type: 'push' }))).toEqual([
-        'stack'
-      ])
-    })
+export type TypedVariableModelV2 =
+  | QueryVariableKind
+  | TextVariableKind
+  | ConstantVariableKind
+  | DatasourceVariableKind
+  | IntervalVariableKind
+  | CustomVariableKind
+  | GroupByVariableKind
+  | AdhocVariableKind
+  | SwitchVariableKind;
 
-    it('warns if a reducer prop is undefined', () => {
-      const preSpy = console.error
-      const spy = jest.fn()
-      console.error = spy
+export function transformSaveModelSchemaV2ToScene(dto: DashboardWithAccessInfo<DashboardV2Spec>): DashboardScene {
+  const { spec: dashboard, metadata, apiVersion } = dto;
 
-      let isNotDefined: any
-      combineReducers({ isNotDefined })
-      expect(spy.mock.calls[0][0]).toMatch(
-        /No reducer provided for key "isNotDefined"/
-      )
+  const found = dashboard.annotations.some((item) => item.spec.builtIn);
+  if (!found) {
+    dashboard.annotations.unshift(getGrafanaBuiltInAnnotation());
+  }
 
-      spy.mockClear()
-      // @ts-expect-error
-      combineReducers({ thing: undefined })
-      expect(spy.mock.calls[0][0]).toMatch(
-        /No reducer provided for key "thing"/
-      )
+  const annotationLayers = dashboard.annotations.map((annotation) => {
+    const annotationQuerySpec = transformV2ToV1AnnotationQuery(annotation);
 
-      spy.mockClear()
-      console.error = preSpy
-    })
+    const layerState = {
+      key: uniqueId('annotations-'),
+      query: annotationQuerySpec,
+      name: annotation.spec.name,
+      isEnabled: Boolean(annotation.spec.enable),
+      isHidden: Boolean(annotation.spec.hide),
+      placement: annotation.spec.placement,
+    };
 
-    it('throws an error if a reducer returns undefined handling an action', () => {
-      const reducer = combineReducers({
-        counter(state: number = 0, action) {
-          switch (action && action.type) {
-            case 'increment':
-              return state + 1
-            case 'decrement':
-              return state - 1
-            case 'whatever':
-            case null:
-            case undefined:
-              return undefined
-            default:
-              return state
-          }
-        }
-      })
+    return new DashboardAnnotationsDataLayer(layerState);
+  });
 
-      expect(() => reducer({ counter: 0 }, { type: 'whatever' })).toThrow(
-        /"whatever".*"counter"/
-      )
-      // @ts-expect-error
-      expect(() => reducer({ counter: 0 }, null)).toThrow(
-        /"counter".*an action/
-      )
-      expect(() => reducer({ counter: 0 }, {} as unknown as AnyAction)).toThrow(
-        /"counter".*an action/
-      )
-    })
+  // Create alert states data layer if unified alerting is enabled
+  let alertStatesLayer: AlertStatesDataLayer | undefined;
+  if (config.unifiedAlertingEnabled) {
+    alertStatesLayer = new AlertStatesDataLayer({
+      key: 'alert-states',
+      name: 'Alert States',
+    });
+  }
 
-    it('throws an error on first call if a reducer returns undefined initializing', () => {
-      const reducer = combineReducers({
-        counter(state: number, action) {
-          switch (action.type) {
-            case 'increment':
-              return state + 1
-            case 'decrement':
-              return state - 1
-            default:
-              return state
-          }
-        }
-      })
-      expect(() => reducer(undefined, { type: '' })).toThrow(
-        /"counter".*initialization/
-      )
-    })
+  const isDashboardEditable = Boolean(dashboard.editable);
+  const canSave = dto.access.canSave !== false;
+  let dashboardId: number | undefined = undefined;
 
-    it('catches error thrown in reducer when initializing and re-throw', () => {
-      const reducer = combineReducers({
-        throwingReducer() {
-          throw new Error('Error thrown in reducer')
-        }
-      })
-      expect(() =>
-        reducer(undefined, undefined as unknown as AnyAction)
-      ).toThrow(/Error thrown in reducer/)
-    })
+  if (metadata.labels?.[DeprecatedInternalId]) {
+    dashboardId = parseInt(metadata.labels[DeprecatedInternalId], 10);
+  }
 
-    it('allows a symbol to be used as an action type', () => {
-      const increment = Symbol('INCREMENT')
+  const meta: DashboardMeta = {
+    canShare: dto.access.canShare !== false,
+    canSave,
+    canStar: dto.access.canStar !== false,
+    canEdit: dto.access.canEdit !== false,
+    canDelete: dto.access.canDelete !== false,
+    canAdmin: dto.access.canAdmin !== false,
+    url: dto.access.url,
+    slug: dto.access.slug,
+    annotationsPermissions: dto.access.annotationsPermissions,
+    created: metadata.creationTimestamp,
+    createdBy: metadata.annotations?.[AnnoKeyCreatedBy],
+    updated: metadata.annotations?.[AnnoKeyUpdatedTimestamp],
+    updatedBy: metadata.annotations?.[AnnoKeyUpdatedBy],
+    folderUid: metadata.annotations?.[AnnoKeyFolder],
+    isSnapshot: Boolean(metadata.annotations?.[AnnoKeyDashboardIsSnapshot]),
+    isEmbedded: Boolean(metadata.annotations?.[AnnoKeyEmbedded]),
+    publicDashboardEnabled: dto.access.isPublic,
 
-      const reducer = combineReducers({
-        counter(state: number = 0, action) {
-          switch (action.type) {
-            case increment:
-              return state + 1
-            default:
-              return state
-          }
-        }
-      })
+    // UI-only metadata, ref: DashboardModel.initMeta
+    showSettings: Boolean(dto.access.canEdit),
+    canMakeEditable: canSave && !isDashboardEditable,
+    hasUnsavedFolderChange: false,
+    version: metadata.generation,
+    k8s: metadata,
+  };
 
-      expect(reducer({ counter: 0 }, { type: increment }).counter).toEqual(1)
-    })
+  // Ref: DashboardModel.initMeta
+  if (!isDashboardEditable) {
+    meta.canEdit = false;
+    meta.canDelete = false;
+    meta.canSave = false;
+  }
 
-    it('maintains referential equality if the reducers it is combining do', () => {
-      const reducer = combineReducers({
-        child1(state = {}) {
-          return state
-        },
-        child2(state = {}) {
-          return state
-        },
-        child3(state = {}) {
-          return state
-        }
-      })
+  const layoutManager: DashboardLayoutManager = layoutDeserializerRegistry
+    .get(dashboard.layout.kind)
+    .deserialize(dashboard.layout, dashboard.elements, dashboard.preload);
 
-      const initialState = reducer(undefined, { type: '@@INIT' })
-      expect(reducer(initialState, { type: 'FOO' })).toBe(initialState)
-    })
+  //createLayoutManager(dashboard);
 
-    it('does not have referential equality if one of the reducers changes something', () => {
-      const reducer = combineReducers({
-        child1(state = {}) {
-          return state
-        },
-        child2(state: { count: number } = { count: 0 }, action) {
-          switch (action.type) {
-            case 'increment':
-              return { count: state.count + 1 }
-            default:
-              return state
-          }
-        },
-        child3(state = {}) {
-          return state
-        }
-      })
+  // Create profiler once and reuse to avoid duplicate metadata setting
+  const dashboardProfiler = getDashboardSceneProfilerWithMetadata(metadata.name, dashboard.title);
 
-      const initialState = reducer(undefined, { type: '@@INIT' })
-      expect(reducer(initialState, { type: 'increment' })).not.toBe(
-        initialState
-      )
-    })
+  const enableProfiling =
+    config.dashboardPerformanceMetrics.findIndex((uid) => uid === '*' || uid === metadata.name) !== -1;
+  const queryController = new behaviors.SceneQueryController(
+    {
+      enableProfiling,
+    },
+    dashboardProfiler
+  );
 
-    it('throws an error on first call if a reducer attempts to handle a private action', () => {
-      const reducer = combineReducers({
-        counter(state: number, action) {
-          switch (action.type) {
-            case 'increment':
-              return state + 1
-            case 'decrement':
-              return state - 1
-            // Never do this in your code:
-            case ActionTypes.INIT:
-              return 0
-            default:
-              return undefined
-          }
-        }
-      })
-      expect(() =>
-        reducer(undefined, undefined as unknown as AnyAction)
-      ).toThrow(/"counter".*private/)
-    })
+  const interactionTracker = new behaviors.SceneInteractionTracker(
+    {
+      enableInteractionTracking: enableProfiling,
+      onInteractionComplete: getDashboardComponentInteractionCallback(metadata.name, dashboard.title),
+    },
+    dashboardProfiler
+  );
 
-    it('warns if no reducers are passed to combineReducers', () => {
-      const preSpy = console.error
-      const spy = jest.fn()
-      console.error = spy
+  const dashboardScene = new DashboardScene(
+    {
+      description: dashboard.description,
+      editable: dashboard.editable,
+      preload: dashboard.preload,
+      id: dashboardId,
+      isDirty: false,
+      links: dashboard.links,
+      meta,
+      tags: dashboard.tags,
+      title: dashboard.title,
+      uid: metadata.name,
+      version: metadata.generation,
+      body: layoutManager,
+      $timeRange: new SceneTimeRange({
+        // Use defaults when time is empty to match DashboardModel behavior
+        from: dashboard.timeSettings.from || defaultTimeSettingsSpec().from,
+        to: dashboard.timeSettings.to || defaultTimeSettingsSpec().to,
+        fiscalYearStartMonth: dashboard.timeSettings.fiscalYearStartMonth,
+        timeZone: dashboard.timeSettings.timezone,
+        weekStart: dashboard.timeSettings.weekStart,
+        UNSAFE_nowDelay: dashboard.timeSettings.nowDelay,
+      }),
+      $variables: getVariables(dashboard, meta.isSnapshot ?? false),
+      $behaviors: [
+        new behaviors.CursorSync({
+          sync: transformCursorSyncV2ToV1(dashboard.cursorSync),
+        }),
+        queryController,
+        interactionTracker,
+        registerDashboardMacro,
+        registerPanelInteractionsReporter,
+        new behaviors.LiveNowTimer({ enabled: dashboard.liveNow }),
+        addPanelsOnLoadBehavior,
+        new DashboardReloadBehavior({
+          reloadOnParamsChange: config.featureToggles.reloadDashboardsOnParamsChange && false,
+          uid: dashboardId?.toString(),
+        }),
+        ...(enableProfiling ? [dashboardAnalyticsInitializer] : []),
+      ],
+      $data: new DashboardDataLayerSet({
+        annotationLayers,
+        alertStatesLayer,
+      }),
+      controls: new DashboardControls({
+        timePicker: new SceneTimePicker({
+          quickRanges: dashboard.timeSettings.quickRanges,
+          defaultQuickRanges: config.quickRanges,
+        }),
+        refreshPicker: new SceneRefreshPicker({
+          refresh: dashboard.timeSettings.autoRefresh,
+          intervals: dashboard.timeSettings.autoRefreshIntervals,
+          withText: true,
+        }),
+        hideTimeControls: dashboard.timeSettings.hideTimepicker,
+      }),
+    },
+    'v2'
+  );
 
-      const reducer = combineReducers({})
-      reducer(undefined, { type: '' })
-      expect(spy.mock.calls[0][0]).toMatch(
-        /Store does not have a valid reducer/
-      )
+  dashboardScene.setInitialSaveModel(dto.spec, dto.metadata, apiVersion);
 
-      spy.mockClear()
-      console.error = preSpy
-    })
+  // Enable panel profiling for this dashboard using the composed SceneRenderProfiler
+  enablePanelProfilingForDashboard(dashboardScene, metadata.name);
 
-    it('warns if input state does not match reducer shape', () => {
-      const preSpy = console.error
-      const spy = jest.fn()
-      const nullAction = undefined as unknown as AnyAction
-      console.error = spy
+  return dashboardScene;
+}
 
-      interface ShapeState {
-        foo: { bar: number }
-        baz: { qux: number }
+function getVariables(dashboard: DashboardV2Spec, isSnapshot: boolean): SceneVariableSet | undefined {
+  let variables: SceneVariableSet | undefined;
+
+  if (isSnapshot) {
+    variables = createVariablesForSnapshot(dashboard);
+  } else {
+    variables = createVariablesForDashboard(dashboard);
+  }
+
+  return variables;
+}
+
+function createVariablesForDashboard(dashboard: DashboardV2Spec) {
+  const variableObjects = dashboard.variables
+    .map((v) => {
+      try {
+        return createSceneVariableFromVariableModel(v);
+      } catch (err) {
+        console.error(err);
+        return null;
       }
-
-      type _ShapeMismatchState = CombinedState<ShapeState>
-
-      const reducer = combineReducers<ShapeState>({
-        foo(state = { bar: 1 }) {
-          return state
-        },
-        baz(state = { qux: 3 }) {
-          return state
-        }
-      })
-
-      reducer(undefined, nullAction)
-      expect(spy.mock.calls.length).toBe(0)
-
-      reducer({ foo: { bar: 2 } } as unknown as ShapeState, nullAction)
-      expect(spy.mock.calls.length).toBe(0)
-
-      reducer(
-        {
-          foo: { bar: 2 },
-          baz: { qux: 4 }
-        },
-        nullAction
-      )
-      expect(spy.mock.calls.length).toBe(0)
-
-      createStore(reducer, { bar: 2 } as unknown as ShapeState)
-      expect(spy.mock.calls[0][0]).toMatch(
-        /Unexpected key "bar".*createStore.*instead: "foo", "baz"/
-      )
-
-      createStore(reducer, {
-        bar: 2,
-        qux: 4,
-        thud: 5
-      } as unknown as ShapeState)
-      expect(spy.mock.calls[1][0]).toMatch(
-        /Unexpected keys "qux", "thud".*createStore.*instead: "foo", "baz"/
-      )
-
-      createStore(reducer, 1 as unknown as ShapeState)
-      expect(spy.mock.calls[2][0]).toMatch(
-        /createStore has unexpected type of "number".*keys: "foo", "baz"/
-      )
-
-      reducer({ corge: 2 } as unknown as ShapeState, nullAction)
-      expect(spy.mock.calls[3][0]).toMatch(
-        /Unexpected key "corge".*reducer.*instead: "foo", "baz"/
-      )
-
-      reducer({ fred: 2, grault: 4 } as unknown as ShapeState, nullAction)
-      expect(spy.mock.calls[4][0]).toMatch(
-        /Unexpected keys "fred", "grault".*reducer.*instead: "foo", "baz"/
-      )
-
-      reducer(1 as unknown as ShapeState, nullAction)
-      expect(spy.mock.calls[5][0]).toMatch(
-        /reducer has unexpected type of "number".*keys: "foo", "baz"/
-      )
-
-      spy.mockClear()
-      console.error = preSpy
     })
+    // TODO: Remove filter
+    // Added temporarily to allow skipping non-compatible variables
+    .filter((v): v is SceneVariable => Boolean(v));
 
-    it('only warns for unexpected keys once', () => {
-      const preSpy = console.error
-      const spy = jest.fn()
-      console.error = spy
-      const nullAction = { type: '' }
+  // Explicitly disable scopes for public dashboards
+  if (config.featureToggles.scopeFilters && !config.publicDashboardAccessToken) {
+    variableObjects.push(new ScopesVariable({ enable: true }));
+  }
 
-      const foo = (state = { foo: 1 }) => state
-      const bar = (state = { bar: 2 }) => state
+  return new SceneVariableSet({
+    variables: variableObjects,
+  });
+}
 
-      expect(spy.mock.calls.length).toBe(0)
+function createSceneVariableFromVariableModel(variable: TypedVariableModelV2): SceneVariable {
+  const commonProperties = {
+    name: variable.spec.name,
+    label: variable.spec.label,
+    description: variable.spec.description,
+  };
+  if (variable.kind === defaultAdhocVariableKind().kind) {
+    const ds = getDataSourceForQuery(
+      {
+        type: variable.group,
+        uid: variable.datasource?.name,
+      },
+      variable.group
+    );
+    const adhocVariableState: AdHocFiltersVariable['state'] = {
+      ...commonProperties,
+      type: 'adhoc',
+      description: variable.spec.description,
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+      datasource: ds,
+      applyMode: 'auto',
+      filters: variable.spec.filters ?? [],
+      baseFilters: variable.spec.baseFilters ?? [],
+      defaultKeys: variable.spec.defaultKeys,
+      useQueriesAsFilterForOptions: true,
+      layout: config.featureToggles.newFiltersUI ? 'combobox' : undefined,
+      supportsMultiValueOperators: Boolean(
+        getDataSourceSrv().getInstanceSettings({ type: ds?.type })?.meta.multiValueFilterOperators
+      ),
+    };
+    if (variable.spec.allowCustomValue !== undefined) {
+      adhocVariableState.allowCustomValue = variable.spec.allowCustomValue;
+    }
+    return new AdHocFiltersVariable(adhocVariableState);
+  }
+  if (variable.kind === defaultCustomVariableKind().kind) {
+    return new CustomVariable({
+      ...commonProperties,
+      value: variable.spec.current?.value ?? '',
+      text: variable.spec.current?.text ?? '',
 
-      interface WarnState {
-        foo: { foo: number }
-        bar: { bar: number }
+      query: variable.spec.query,
+      isMulti: variable.spec.multi,
+      allValue: variable.spec.allValue || undefined,
+      includeAll: variable.spec.includeAll,
+      defaultToAll: Boolean(variable.spec.includeAll),
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+      ...(variable.spec.allowCustomValue !== undefined && { allowCustomValue: variable.spec.allowCustomValue }),
+    });
+  } else if (variable.kind === defaultQueryVariableKind().kind) {
+    return new QueryVariable({
+      ...commonProperties,
+      value: variable.spec.current?.value ?? '',
+      text: variable.spec.current?.text ?? '',
+      query: getDataQueryForVariable(variable),
+      datasource: getRuntimeVariableDataSource(variable),
+      sort: transformSortVariableToEnumV1(variable.spec.sort),
+      refresh: transformVariableRefreshToEnumV1(variable.spec.refresh),
+      regex: variable.spec.regex,
+      regexApplyTo: variable.spec.regexApplyTo,
+      allValue: variable.spec.allValue || undefined,
+      includeAll: variable.spec.includeAll,
+      defaultToAll: Boolean(variable.spec.includeAll),
+      isMulti: variable.spec.multi,
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+      definition: variable.spec.definition,
+      ...(variable.spec.allowCustomValue !== undefined && { allowCustomValue: variable.spec.allowCustomValue }),
+    });
+  } else if (variable.kind === defaultDatasourceVariableKind().kind) {
+    return new DataSourceVariable({
+      ...commonProperties,
+      value: variable.spec.current?.value ?? '',
+      text: variable.spec.current?.text ?? '',
+      regex: variable.spec.regex,
+      pluginId: variable.spec.pluginId,
+      allValue: variable.spec.allValue || undefined,
+      includeAll: variable.spec.includeAll,
+      defaultToAll: Boolean(variable.spec.includeAll),
+      skipUrlSync: variable.spec.skipUrlSync,
+      isMulti: variable.spec.multi,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+      defaultOptionEnabled:
+        variable.spec.current?.value === DEFAULT_DATASOURCE && variable.spec.current?.text === 'default',
+      ...(variable.spec.allowCustomValue !== undefined && { allowCustomValue: variable.spec.allowCustomValue }),
+    });
+  } else if (variable.kind === defaultIntervalVariableKind().kind) {
+    // If query is missing/empty, extract intervals from options instead of using defaults
+    let intervals: string[];
+    if (variable.spec.query) {
+      intervals = getIntervalsFromQueryString(variable.spec.query);
+    } else if (variable.spec.options && variable.spec.options.length > 0) {
+      // Extract intervals from options when query is missing (matches backend behavior)
+      intervals = variable.spec.options.map((opt) => String(opt.value || opt.text)).filter(Boolean);
+    } else {
+      // Fallback to default intervals only if both query and options are missing
+      intervals = getIntervalsFromQueryString('');
+    }
+    const currentInterval = getCurrentValueForOldIntervalModel(variable, intervals);
+    return new IntervalVariable({
+      ...commonProperties,
+      value: currentInterval,
+      intervals: intervals,
+      autoEnabled: variable.spec.auto,
+      autoStepCount: variable.spec.auto_count,
+      autoMinInterval: variable.spec.auto_min,
+      refresh: transformVariableRefreshToEnumV1(variable.spec.refresh),
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+    });
+  } else if (variable.kind === defaultConstantVariableKind().kind) {
+    return new ConstantVariable({
+      ...commonProperties,
+      value: variable.spec.query,
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+    });
+  } else if (variable.kind === defaultTextVariableKind().kind) {
+    let val;
+    if (!variable?.spec.current?.value) {
+      val = variable.spec.query;
+    } else {
+      if (typeof variable.spec.current.value === 'string') {
+        val = variable.spec.current.value;
+      } else {
+        val = variable.spec.current.value[0];
       }
+    }
 
-      const reducer = combineReducers({ foo, bar })
-      const state = { foo: 1, bar: 2, qux: 3 } as unknown as WarnState
-      const bazState = { ...state, baz: 5 } as unknown as WarnState
+    return new TextBoxVariable({
+      ...commonProperties,
+      value: val,
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+    });
+  } else if (config.featureToggles.groupByVariable && variable.kind === defaultGroupByVariableKind().kind) {
+    const ds = getDataSourceForQuery(
+      {
+        type: variable.group,
+        uid: variable.datasource?.name,
+      },
+      variable.group
+    );
 
-      reducer(state, nullAction)
-      reducer(state, nullAction)
-      reducer(state, nullAction)
-      reducer(state, nullAction)
-      expect(spy.mock.calls.length).toBe(1)
+    return new GroupByVariable({
+      ...commonProperties,
+      datasource: ds,
+      value: variable.spec.current?.value || [],
+      text: variable.spec.current?.text || [],
+      skipUrlSync: variable.spec.skipUrlSync,
+      isMulti: variable.spec.multi,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+      // @ts-expect-error
+      defaultOptions: variable.options,
+    });
+  } else if (variable.kind === defaultSwitchVariableKind().kind) {
+    return new SwitchVariable({
+      ...commonProperties,
+      value: variable.spec.current ?? 'false',
+      enabledValue: variable.spec.enabledValue ?? 'true',
+      disabledValue: variable.spec.disabledValue ?? 'false',
+      skipUrlSync: variable.spec.skipUrlSync,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+    });
+  } else {
+    throw new Error(`Scenes: Unsupported variable type ${variable.kind}`);
+  }
+}
 
-      reducer(bazState, nullAction)
-      reducer({ ...bazState }, nullAction)
-      reducer({ ...bazState }, nullAction)
-      reducer({ ...bazState }, nullAction)
-      expect(spy.mock.calls.length).toBe(2)
+function getDataQueryForVariable(variable: QueryVariableKind) {
+  return LEGACY_STRING_VALUE_KEY in variable.spec.query.spec
+    ? (variable.spec.query.spec[LEGACY_STRING_VALUE_KEY] ?? '')
+    : variable.spec.query.spec;
+}
 
-      spy.mockClear()
-      console.error = preSpy
+export function getCurrentValueForOldIntervalModel(variable: IntervalVariableKind, intervals: string[]): string {
+  // Handle missing current object or value
+  const currentValue = variable.spec.current?.value;
+  const selectedInterval = Array.isArray(currentValue) ? currentValue[0] : currentValue;
+
+  // If no intervals are available, return empty string (will use default from IntervalVariable)
+  if (intervals.length === 0) {
+    return '';
+  }
+
+  // If no selected interval, return the first valid interval
+  if (!selectedInterval) {
+    return intervals[0];
+  }
+
+  // If the interval is the old auto format, return the new auto interval from scenes.
+  if (selectedInterval.startsWith('$__auto_interval_')) {
+    return '$__auto';
+  }
+
+  // Check if the selected interval is valid.
+  if (intervals.includes(selectedInterval)) {
+    return selectedInterval;
+  }
+
+  // If the selected interval is not valid, return the first valid interval.
+  return intervals[0];
+}
+
+export function createVariablesForSnapshot(dashboard: DashboardV2Spec): SceneVariableSet {
+  const variableObjects = dashboard.variables
+    .map((v) => {
+      try {
+        // for adhoc we are using the AdHocFiltersVariable from scenes becuase of its complexity
+        if (v.kind === 'AdhocVariable') {
+          const ds = getDataSourceForQuery(
+            {
+              type: v.group,
+              uid: v.datasource?.name,
+            },
+            v.group
+          );
+
+          return new AdHocFiltersVariable({
+            name: v.spec.name,
+            label: v.spec.label,
+            readOnly: true,
+            description: v.spec.description,
+            skipUrlSync: v.spec.skipUrlSync,
+            hide: transformVariableHideToEnumV1(v.spec.hide),
+            datasource: ds,
+            applyMode: 'auto',
+            filters: v.spec.filters ?? [],
+            baseFilters: v.spec.baseFilters ?? [],
+            defaultKeys: v.spec.defaultKeys,
+            useQueriesAsFilterForOptions: true,
+            layout: config.featureToggles.newFiltersUI ? 'combobox' : undefined,
+            supportsMultiValueOperators: Boolean(
+              getDataSourceSrv().getInstanceSettings({ type: ds?.type })?.meta.multiValueFilterOperators
+            ),
+          });
+        }
+        // for other variable types we are using the SnapshotVariable
+        return createSnapshotVariable(v);
+      } catch (err) {
+        console.error(err);
+        return null;
+      }
     })
+    // TODO: Remove filter
+    // Added temporarily to allow skipping non-compatible variables
+    .filter((v): v is SceneVariable => Boolean(v));
 
-    describe('With Replace Reducers', function () {
-      const foo = (state = {}) => state
-      const bar = (state = {}) => state
-      const ACTION = { type: 'ACTION' }
+  return new SceneVariableSet({
+    variables: variableObjects,
+  });
+}
 
-      it('should return an updated state when additional reducers are passed to combineReducers', function () {
-        const originalCompositeReducer = combineReducers({ foo })
-        const store = createStore(originalCompositeReducer)
+/** Snapshots variables are read-only and should not be updated */
+export function createSnapshotVariable(variable: TypedVariableModelV2): SceneVariable {
+  let snapshotVariable: SnapshotVariable;
+  let current: { value: string | string[]; text: string | string[] };
+  if (variable.kind === 'IntervalVariable') {
+    const intervals = getIntervalsFromQueryString(variable.spec.query);
+    const currentInterval = getCurrentValueForOldIntervalModel(variable, intervals);
+    snapshotVariable = new SnapshotVariable({
+      name: variable.spec.name,
+      label: variable.spec.label,
+      description: variable.spec.description,
+      value: currentInterval,
+      text: currentInterval,
+      hide: transformVariableHideToEnumV1(variable.spec.hide),
+    });
+    return snapshotVariable;
+  }
 
-        store.dispatch(ACTION)
+  if (variable.kind === 'ConstantVariable' || variable.kind === 'AdhocVariable') {
+    current = {
+      value: '',
+      text: '',
+    };
+  } else if (variable.kind === 'SwitchVariable') {
+    current = {
+      value: variable.spec.current ?? 'false',
+      text: variable.spec.current ?? 'false',
+    };
+  } else {
+    current = {
+      value: variable.spec.current?.value ?? '',
+      text: variable.spec.current?.text ?? '',
+    };
+  }
 
-        const initialState = store.getState()
+  snapshotVariable = new SnapshotVariable({
+    name: variable.spec.name,
+    label: variable.spec.label,
+    description: variable.spec.description,
+    value: current?.value ?? '',
+    text: current?.text ?? '',
+    hide: transformVariableHideToEnumV1(variable.spec.hide),
+  });
+  return snapshotVariable;
+}
 
-        store.replaceReducer(combineReducers({ foo, bar }))
-        store.dispatch(ACTION)
+export function getPanelElement(dashboard: DashboardV2Spec, elementName: string): PanelKind | undefined {
+  return dashboard.elements[elementName].kind === 'Panel' ? dashboard.elements[elementName] : undefined;
+}
 
-        const nextState = store.getState()
-        expect(nextState).not.toBe(initialState)
-      })
+export function getLibraryPanelElement(dashboard: DashboardV2Spec, elementName: string): LibraryPanelKind | undefined {
+  return dashboard.elements[elementName].kind === 'LibraryPanel' ? dashboard.elements[elementName] : undefined;
+}
 
-      it('should return an updated state when reducers passed to combineReducers are changed', function () {
-        const baz = (state = {}) => state
+function getGrafanaBuiltInAnnotation(): AnnotationQueryKind {
+  const grafanaBuiltAnnotation: AnnotationQueryKind = {
+    kind: 'AnnotationQuery',
+    spec: {
+      query: {
+        kind: 'DataQuery',
+        version: defaultDataQueryKind().version,
+        group: 'grafana',
+        datasource: {
+          name: '-- Grafana --',
+        },
+        spec: {},
+      },
+      name: 'Annotations & Alerts',
+      iconColor: DEFAULT_ANNOTATION_COLOR,
+      enable: true,
+      hide: true,
+      builtIn: true,
+    },
+  };
 
-        const originalCompositeReducer = combineReducers({ foo, bar })
-        const store = createStore(originalCompositeReducer)
-
-        store.dispatch(ACTION)
-
-        const initialState = store.getState()
-
-        store.replaceReducer(combineReducers({ baz, bar }))
-        store.dispatch(ACTION)
-
-        const nextState = store.getState()
-        expect(nextState).not.toBe(initialState)
-      })
-
-      it('should return the same state when reducers passed to combineReducers not changed', function () {
-        const originalCompositeReducer = combineReducers({ foo, bar })
-        const store = createStore(originalCompositeReducer)
-
-        store.dispatch(ACTION)
-
-        const initialState = store.getState()
-
-        store.replaceReducer(combineReducers({ foo, bar }))
-        store.dispatch(ACTION)
-
-        const nextState = store.getState()
-        expect(nextState).toBe(initialState)
-      })
-
-      it('should return an updated state when one of more reducers passed to the combineReducers are removed', function () {
-        const originalCompositeReducer = combineReducers({ foo, bar })
-        const store = createStore(originalCompositeReducer)
-
-        store.dispatch(ACTION)
-
-        const initialState = store.getState()
-
-        store.replaceReducer(combineReducers({ bar }))
-
-        const nextState = store.getState()
-        expect(nextState).not.toBe(initialState)
-      })
-    })
-  })
-})
+  return grafanaBuiltAnnotation;
+}

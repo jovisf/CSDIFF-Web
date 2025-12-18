@@ -1,108 +1,194 @@
-import type { ActionCreator, Store } from '..'
-import { bindActionCreators, createStore } from '..'
-import { todos } from './helpers/reducers'
-import * as actionCreators from './helpers/actionCreators'
+import { config, registerEchoBackend, setEchoSrv } from '@grafana/runtime';
+import { reportMetricPerformanceMark } from 'app/core/utils/metrics';
 
-describe('bindActionCreators', () => {
-  let store: Store
-  let actionCreatorFunctions: any
+import { contextSrv } from '../context_srv';
 
-  beforeEach(() => {
-    store = createStore(todos)
-    actionCreatorFunctions = { ...actionCreators }
-    Object.keys(actionCreatorFunctions).forEach(key => {
-      if (typeof actionCreatorFunctions[key] !== 'function') {
-        delete actionCreatorFunctions[key]
-      }
-    })
-  })
+import { Echo } from './Echo';
 
-  it('wraps the action creators with the dispatch function', () => {
-    const boundActionCreators = bindActionCreators(
-      actionCreators,
-      store.dispatch
-    )
-    expect(Object.keys(boundActionCreators)).toEqual(
-      Object.keys(actionCreatorFunctions)
-    )
+// Initialise EchoSrv backends, calls during frontend app startup
+export async function initEchoSrv() {
+  setEchoSrv(new Echo({ debug: process.env.NODE_ENV === 'development' }));
 
-    const action = boundActionCreators.addTodo('Hello')
-    expect(action).toEqual(actionCreators.addTodo('Hello'))
-    expect(store.getState()).toEqual([{ id: 1, text: 'Hello' }])
-  })
+  window.addEventListener('load', (e) => {
+    const loadMetricName = 'frontend_boot_load_time_seconds';
+    // Metrics below are marked in public/views/index.html
+    const jsLoadMetricName = 'frontend_boot_js_done_time_seconds';
+    const cssLoadMetricName = 'frontend_boot_css_time_seconds';
 
-  it('wraps action creators transparently', () => {
-    const uniqueThis = {}
-    const argArray = [1, 2, 3]
-    function actionCreator(this: any) {
-      return { type: 'UNKNOWN_ACTION', this: this, args: [...arguments] }
+    if (performance) {
+      performance.mark(loadMetricName);
+      reportMetricPerformanceMark('first-paint', 'frontend_boot_', '_time_seconds');
+      reportMetricPerformanceMark('first-contentful-paint', 'frontend_boot_', '_time_seconds');
+      reportMetricPerformanceMark(loadMetricName);
+      reportMetricPerformanceMark(jsLoadMetricName);
+      reportMetricPerformanceMark(cssLoadMetricName);
     }
-    const boundActionCreator = bindActionCreators(actionCreator, store.dispatch)
+  });
 
-    const boundAction = boundActionCreator.apply(uniqueThis, argArray as [])
-    const action = actionCreator.apply(uniqueThis, argArray as [])
-    expect(boundAction).toEqual(action)
-    expect(boundAction.this).toBe(uniqueThis)
-    expect(action.this).toBe(uniqueThis)
-  })
+  try {
+    await initPerformanceBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv Performance backend', error);
+  }
 
-  it('skips non-function values in the passed object', () => {
-    // as this is testing against invalid values, we will cast to unknown and then back to ActionCreator<any>
-    // in a typescript environment this test is unnecessary, but required in javascript
-    const boundActionCreators = bindActionCreators(
-      {
-        ...actionCreators,
-        foo: 42,
-        bar: 'baz',
-        wow: undefined,
-        much: {},
-        test: null
-      } as unknown as ActionCreator<any>,
-      store.dispatch
-    )
-    expect(Object.keys(boundActionCreators)).toEqual(
-      Object.keys(actionCreatorFunctions)
-    )
-  })
+  try {
+    await initFaroBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv Faro backend', error);
+  }
 
-  it('supports wrapping a single function only', () => {
-    const actionCreator = actionCreators.addTodo
-    const boundActionCreator = bindActionCreators(actionCreator, store.dispatch)
+  try {
+    await initGoogleAnalyticsBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv GoogleAnalytics backend', error);
+  }
 
-    const action = boundActionCreator('Hello')
-    expect(action).toEqual(actionCreator('Hello'))
-    expect(store.getState()).toEqual([{ id: 1, text: 'Hello' }])
-  })
+  try {
+    await initGoogleAnalaytics4Backend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv GoogleAnalaytics4 backend', error);
+  }
 
-  it('throws for an undefined actionCreator', () => {
-    expect(() => {
-      // @ts-expect-error
-      bindActionCreators(undefined, store.dispatch)
-    }).toThrow(
-      `bindActionCreators expected an object or a function, but instead received: 'undefined'. ` +
-        `Did you write "import ActionCreators from" instead of "import * as ActionCreators from"?`
-    )
-  })
+  try {
+    await initRudderstackBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv Rudderstack backend', error);
+  }
 
-  it('throws for a null actionCreator', () => {
-    expect(() => {
-      // @ts-expect-error
-      bindActionCreators(null, store.dispatch)
-    }).toThrow(
-      `bindActionCreators expected an object or a function, but instead received: 'null'. ` +
-        `Did you write "import ActionCreators from" instead of "import * as ActionCreators from"?`
-    )
-  })
+  try {
+    await initAzureAppInsightsBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv AzureAppInsights backend', error);
+  }
 
-  it('throws for a primitive actionCreator', () => {
-    expect(() => {
-      bindActionCreators(
-        'string' as unknown as ActionCreator<any>,
-        store.dispatch
-      )
-    }).toThrow(
-      `bindActionCreators expected an object or a function, but instead received: 'string'. ` +
-        `Did you write "import ActionCreators from" instead of "import * as ActionCreators from"?`
-    )
-  })
-})
+  try {
+    await initConsoleBackend();
+  } catch (error) {
+    console.error('Error initializing EchoSrv Console backend', error);
+  }
+}
+
+async function initPerformanceBackend() {
+  if (contextSrv.user.orgRole === '') {
+    return;
+  }
+
+  const { PerformanceBackend } = await import('./backends/PerformanceBackend');
+  registerEchoBackend(new PerformanceBackend({}));
+}
+
+async function initFaroBackend() {
+  if (!config.grafanaJavascriptAgent.enabled) {
+    return;
+  }
+
+  // Ignore Rudderstack URLs
+  const rudderstackUrls = [
+    config.rudderstackConfigUrl,
+    config.rudderstackDataPlaneUrl,
+    config.rudderstackIntegrationsUrl,
+  ]
+    .filter(Boolean)
+    .map((url) => new RegExp(`${url}.*.`));
+
+  const { GrafanaJavascriptAgentBackend } = await import(
+    './backends/grafana-javascript-agent/GrafanaJavascriptAgentBackend'
+  );
+
+  registerEchoBackend(
+    new GrafanaJavascriptAgentBackend({
+      buildInfo: config.buildInfo,
+      userIdentifier: contextSrv.user.analytics.identifier,
+      ignoreUrls: rudderstackUrls,
+
+      apiKey: config.grafanaJavascriptAgent.apiKey,
+      customEndpoint: config.grafanaJavascriptAgent.customEndpoint,
+      consoleInstrumentalizationEnabled: config.grafanaJavascriptAgent.consoleInstrumentalizationEnabled,
+      performanceInstrumentalizationEnabled: config.grafanaJavascriptAgent.performanceInstrumentalizationEnabled,
+      cspInstrumentalizationEnabled: config.grafanaJavascriptAgent.cspInstrumentalizationEnabled,
+      tracingInstrumentalizationEnabled: config.grafanaJavascriptAgent.tracingInstrumentalizationEnabled,
+      webVitalsAttribution: config.grafanaJavascriptAgent.webVitalsAttribution,
+      internalLoggerLevel: config.grafanaJavascriptAgent.internalLoggerLevel,
+      botFilterEnabled: config.grafanaJavascriptAgent.botFilterEnabled,
+    })
+  );
+}
+
+async function initGoogleAnalyticsBackend() {
+  if (!config.googleAnalyticsId) {
+    return;
+  }
+
+  const { GAEchoBackend } = await import('./backends/analytics/GABackend');
+  registerEchoBackend(
+    new GAEchoBackend({
+      googleAnalyticsId: config.googleAnalyticsId,
+    })
+  );
+}
+
+async function initGoogleAnalaytics4Backend() {
+  if (!config.googleAnalytics4Id) {
+    return;
+  }
+
+  const { GA4EchoBackend } = await import('./backends/analytics/GA4Backend');
+  registerEchoBackend(
+    new GA4EchoBackend({
+      googleAnalyticsId: config.googleAnalytics4Id,
+      googleAnalytics4SendManualPageViews: config.googleAnalytics4SendManualPageViews,
+    })
+  );
+}
+
+async function initRudderstackBackend() {
+  if (!(config.rudderstackWriteKey && config.rudderstackDataPlaneUrl)) {
+    return;
+  }
+
+  const modulePromise =
+    config.featureToggles.rudderstackUpgrade &&
+    // Import V3 backend only if all V3 related config is present
+    config.rudderstackV3SdkUrl
+      ? import('./backends/analytics/RudderstackV3Backend')
+      : // If not set, fallback to legacy backend
+        import('./backends/analytics/RudderstackBackend');
+
+  const { RudderstackBackend } = await modulePromise;
+  registerEchoBackend(
+    new RudderstackBackend({
+      writeKey: config.rudderstackWriteKey,
+      dataPlaneUrl: config.rudderstackDataPlaneUrl,
+      user: contextSrv.user,
+      sdkUrl: config.rudderstackSdkUrl,
+      sdkV3Url: config.rudderstackV3SdkUrl,
+      configUrl: config.rudderstackConfigUrl,
+      integrationsUrl: config.rudderstackIntegrationsUrl,
+      buildInfo: config.buildInfo,
+    })
+  );
+}
+
+async function initAzureAppInsightsBackend() {
+  if (!config.applicationInsightsConnectionString) {
+    return;
+  }
+
+  const { ApplicationInsightsBackend } = await import('./backends/analytics/ApplicationInsightsBackend');
+  registerEchoBackend(
+    new ApplicationInsightsBackend({
+      connectionString: config.applicationInsightsConnectionString,
+      endpointUrl: config.applicationInsightsEndpointUrl,
+      autoRouteTracking: config.applicationInsightsAutoRouteTracking,
+    })
+  );
+}
+
+async function initConsoleBackend() {
+  if (!config.analyticsConsoleReporting) {
+    return;
+  }
+
+  const { BrowserConsoleBackend } = await import('./backends/analytics/BrowseConsoleBackend');
+  registerEchoBackend(new BrowserConsoleBackend());
+}

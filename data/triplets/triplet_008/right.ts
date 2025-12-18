@@ -1,762 +1,432 @@
-import type { InitialEntry } from "../../../lib/router/history";
-import type {
-  Fetcher,
-  RouterFetchOptions,
-  Router,
-  RouterNavigateOptions,
-  RouterInit,
-} from "../../../lib/router/router";
-import type {
-  AgnosticDataRouteObject,
-  AgnosticRouteMatch,
-} from "../../../lib/router/utils";
-import { createRouter, IDLE_FETCHER } from "../../../lib/router/router";
-import {
-  createMemoryHistory,
-  invariant,
-  parsePath,
-} from "../../../lib/router/history";
-import type {
-  AgnosticIndexRouteObject,
-  AgnosticNonIndexRouteObject,
-} from "../../../lib/router/utils";
-import {
-  matchRoutes,
-  redirect,
-  stripBasename,
-} from "../../../lib/router/utils";
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
 
-import { isRedirect, tick } from "./utils";
+//#region --- editor/workbench core
 
-// Routes passed into setup() should just have a boolean for loader/action
-// indicating they want a stub.  They get enhanced back to AgnosticRouteObjects
-// by our test harness
-export type TestIndexRouteObject = Pick<
-  AgnosticIndexRouteObject,
-  | "id"
-  | "index"
-  | "path"
-  | "shouldRevalidate"
-  | "handle"
-  | "lazy"
-  | "middleware"
-> & {
-  loader?: boolean;
-  action?: boolean;
-  hasErrorBoundary?: boolean;
-};
+import '../editor/editor.all.js';
 
-export type TestNonIndexRouteObject = Pick<
-  AgnosticNonIndexRouteObject,
-  | "id"
-  | "index"
-  | "path"
-  | "shouldRevalidate"
-  | "handle"
-  | "lazy"
-  | "middleware"
-> & {
-  loader?: boolean;
-  action?: boolean;
-  hasErrorBoundary?: boolean;
-  children?: TestRouteObject[];
-};
+import './api/browser/extensionHost.contribution.js';
+import './browser/workbench.contribution.js';
 
-export type TestRouteObject = TestIndexRouteObject | TestNonIndexRouteObject;
+//#endregion
 
-// A helper that includes the Deferred and stubs for any loaders/actions for the
-// route allowing fine-grained test execution
-export type InternalHelpers = {
-  navigationId: number;
-  dfd: ReturnType<typeof createDeferred>;
-  stub: jest.Mock;
-  _signal?: AbortSignal;
-};
 
-export type Helpers = InternalHelpers & {
-  get signal(): AbortSignal;
-  resolve: (d: any) => Promise<void>;
-  reject: (d: any) => Promise<void>;
-  redirect: (
-    href: string,
-    status?: number,
-    headers?: Record<string, string>,
-    shims?: string[],
-  ) => Promise<NavigationHelpers>;
-  redirectReturn: (
-    href: string,
-    status?: number,
-    headers?: Record<string, string>,
-    shims?: string[],
-  ) => Promise<NavigationHelpers>;
-};
+//#region --- workbench actions
 
-// Helpers returned from a TestHarness.navigate call, allowing fine grained
-// control and assertions over the loaders/actions
-export type NavigationHelpers = {
-  navigationId: number;
-  loaders: Record<string, Helpers>;
-  actions: Record<string, Helpers>;
-};
+import './browser/actions/textInputActions.js';
+import './browser/actions/developerActions.js';
+import './browser/actions/helpActions.js';
+import './browser/actions/layoutActions.js';
+import './browser/actions/listCommands.js';
+import './browser/actions/navigationActions.js';
+import './browser/actions/windowActions.js';
+import './browser/actions/workspaceActions.js';
+import './browser/actions/workspaceCommands.js';
+import './browser/actions/quickAccessActions.js';
+import './browser/actions/widgetNavigationCommands.js';
 
-export type FetcherHelpers = NavigationHelpers & {
-  key: string;
-  fetcher: Fetcher;
-};
+//#endregion
 
-// Router created by setup() - used for automatic cleanup
-let currentRouter: Router | null = null;
-// A set of to-be-garbage-collected Deferred's to clean up at the end of a test
-let gcDfds = new Set<ReturnType<typeof createDeferred>>();
 
-// Reusable routes for a simple tasks app, for test cases that don't want
-// to create their own more complex routes
-export const TASK_ROUTES: TestRouteObject[] = [
-  {
-    id: "root",
-    path: "/",
-    loader: true,
-    hasErrorBoundary: true,
-    children: [
-      {
-        id: "index",
-        index: true,
-        loader: true,
-      },
-      {
-        id: "tasks",
-        path: "tasks",
-        loader: true,
-        action: true,
-        hasErrorBoundary: true,
-      },
-      {
-        id: "tasksId",
-        path: "tasks/:id",
-        loader: true,
-        action: true,
-        hasErrorBoundary: true,
-      },
-      {
-        id: "noLoader",
-        path: "no-loader",
-      },
-    ],
-  },
-];
+//#region --- API Extension Points
 
-type SetupOpts = Omit<RouterInit, "routes" | "history" | "window"> & {
-  routes: TestRouteObject[];
-  initialEntries?: InitialEntry[];
-  initialIndex?: number;
-};
+import './services/actions/common/menusExtensionPoint.js';
+import './api/common/configurationExtensionPoint.js';
+import './api/browser/viewsExtensionPoint.js';
 
-// We use a slightly modified version of createDeferred here that includes the
-// tick() calls to let the router finish updating
-export function createDeferred<T = any>() {
-  let resolve: (val: T) => Promise<void>;
-  let reject: (error?: Error) => Promise<void>;
-  let promise = new Promise<T>((res, rej) => {
-    resolve = async (val: T) => {
-      res(val);
-      await tick();
-      await promise;
-    };
-    reject = async (error?: Error) => {
-      rej(error);
-      await promise.catch(() => tick());
-    };
-  });
-  return {
-    promise,
-    //@ts-ignore
-    resolve,
-    //@ts-ignore
-    reject,
-  };
-}
+//#endregion
 
-export function createAsyncStub(): [
-  asyncStub: jest.Mock,
-  deferred: ReturnType<typeof createDeferred>,
-] {
-  let deferred = createDeferred();
-  let asyncStub = jest.fn(() => deferred.promise);
 
-  return [asyncStub, deferred];
-}
+//#region --- workbench parts
 
-export function getFetcherData(router: Router) {
-  let fetcherData = new Map<string, unknown>();
-  router.subscribe((state, { deletedFetchers }) => {
-    deletedFetchers.forEach((k) => {
-      fetcherData.delete(k);
-    });
-    state.fetchers.forEach((fetcher, key) => {
-      if (
-        fetcher.data !== undefined &&
-        // action fetch
-        ((fetcher.formMethod !== "GET" && fetcher.state === "loading") ||
-          // normal fetch
-          fetcher.state === "idle")
-      ) {
-        fetcherData.set(key, fetcher.data);
-      }
-    });
-  });
-  return fetcherData;
-}
+import './browser/parts/editor/editor.contribution.js';
+import './browser/parts/editor/editorParts.js';
+import './browser/parts/paneCompositePartService.js';
+import './browser/parts/banner/bannerPart.js';
+import './browser/parts/statusbar/statusbarPart.js';
 
-export function setup({
-  routes,
-  initialEntries,
-  initialIndex,
-  ...routerInit
-}: SetupOpts) {
-  let guid = 0;
-  // Global "active" helpers, keyed by navType:guid:loaderOrAction:routeId.
-  // For example, the first navigation for /parent/foo would generate:
-  //   navigation:1:action:parent -> helpers
-  //   navigation:1:action:foo -> helpers
-  //   navigation:1:loader:parent -> helpers
-  //   navigation:1:loader:foo -> helpers
-  //
-  let activeHelpers = new Map<string, InternalHelpers>();
-  // "Active" flags to indicate which helpers should be used the next time a
-  // router calls an action or loader internally.
-  let activeActionType: "navigation" | "fetch" = "navigation";
-  let activeLoaderType: "navigation" | "fetch" = "navigation";
-  let activeLoaderNavigationId = guid;
-  let activeActionNavigationId = guid;
-  let activeLoaderFetchId = guid;
-  let activeActionFetchId = guid;
+//#endregion
 
-  // Enhance routes with loaders/actions as requested that will call the
-  // active navigation loader/action
-  function enhanceRoutes(_routes: TestRouteObject[]) {
-    return _routes.map((r) => {
-      let enhancedRoute: AgnosticDataRouteObject = {
-        middleware: undefined,
-        ...r,
-        loader: undefined,
-        action: undefined,
-        children: undefined,
-        id: r.id || `route-${guid++}`,
-      };
-      if (r.loader) {
-        enhancedRoute.loader = (...args) => {
-          let navigationId =
-            activeLoaderType === "fetch"
-              ? activeLoaderFetchId
-              : activeLoaderNavigationId;
-          let helperKey = `${activeLoaderType}:${navigationId}:loader:${enhancedRoute.id}`;
-          let helpers = activeHelpers.get(helperKey);
-          invariant(helpers, `No helpers found for: ${helperKey}`);
-          helpers.stub(...args);
-          helpers._signal = args[0].request.signal;
-          return helpers.dfd.promise;
-        };
-      }
-      if (r.action) {
-        enhancedRoute.action = (...args) => {
-          let type = activeActionType;
-          let navigationId =
-            activeActionType === "fetch"
-              ? activeActionFetchId
-              : activeActionNavigationId;
-          let helperKey = `${activeActionType}:${navigationId}:action:${enhancedRoute.id}`;
-          let helpers = activeHelpers.get(helperKey);
-          invariant(helpers, `No helpers found for: ${helperKey}`);
-          helpers.stub(...args);
-          helpers._signal = args[0].request.signal;
-          return helpers.dfd.promise.then(
-            (result) => {
-              // After a successful non-redirect action, ensure we call the right
-              // loaders as a follow up.  In the case of a redirect, ths navigation
-              // is aborted and we will use whatever new navigationId the redirect
-              // already assigned
-              if (!isRedirect(result)) {
-                if (type === "navigation") {
-                  activeLoaderType = "navigation";
-                  activeLoaderNavigationId = navigationId;
-                } else {
-                  activeLoaderType = "fetch";
-                  activeLoaderFetchId = navigationId;
-                }
-              }
-              return result;
-            },
-            (result) => {
-              // After a non-redirect rejected navigation action, we may still call
-              // ancestor loaders so set the right values to ensure we trigger the
-              // right ones.
-              if (type === "navigation" && !isRedirect(result)) {
-                activeLoaderType = "navigation";
-                activeLoaderNavigationId = navigationId;
-              }
-              return Promise.reject(result);
-            },
-          );
-        };
-      }
-      if (!r.index && r.children) {
-        enhancedRoute.children = enhanceRoutes(r.children);
-      }
-      return enhancedRoute;
-    });
-  }
 
-  // jsdom is making more and more properties non-configurable, so we inject
-  // our own jest-friendly window.
-  let testWindow = {
-    ...window,
-    location: {
-      ...window.location,
-      assign: jest.fn(),
-      replace: jest.fn(),
-    },
-  } as unknown as Window;
-  // ^ Spread makes TS sad - `window.NaN` conflicts with `[index: number]: Window`
+//#region --- workbench services
 
-  let history = createMemoryHistory({ initialEntries, initialIndex });
-  jest.spyOn(history, "push");
-  jest.spyOn(history, "replace");
-  currentRouter = createRouter({
-    history,
-    routes: enhanceRoutes(routes),
-    window: testWindow,
-    ...routerInit,
-  });
+import '../platform/actions/common/actions.contribution.js';
+import '../platform/undoRedo/common/undoRedoService.js';
+import '../platform/mcp/common/mcpResourceScannerService.js';
+import './services/workspaces/common/editSessionIdentityService.js';
+import './services/workspaces/common/canonicalUriService.js';
+import './services/extensions/browser/extensionUrlHandler.js';
+import './services/keybinding/common/keybindingEditing.js';
+import './services/decorations/browser/decorationsService.js';
+import './services/dialogs/common/dialogService.js';
+import './services/progress/browser/progressService.js';
+import './services/editor/browser/codeEditorService.js';
+import './services/preferences/browser/preferencesService.js';
+import './services/configuration/common/jsonEditingService.js';
+import './services/textmodelResolver/common/textModelResolverService.js';
+import './services/editor/browser/editorService.js';
+import './services/editor/browser/editorResolverService.js';
+import './services/aiEmbeddingVector/common/aiEmbeddingVectorService.js';
+import './services/aiRelatedInformation/common/aiRelatedInformationService.js';
+import './services/aiSettingsSearch/common/aiSettingsSearchService.js';
+import './services/history/browser/historyService.js';
+import './services/activity/browser/activityService.js';
+import './services/keybinding/browser/keybindingService.js';
+import './services/untitled/common/untitledTextEditorService.js';
+import './services/textresourceProperties/common/textResourcePropertiesService.js';
+import './services/textfile/common/textEditorService.js';
+import './services/language/common/languageService.js';
+import './services/model/common/modelService.js';
+import './services/notebook/common/notebookDocumentService.js';
+import './services/commands/common/commandService.js';
+import './services/themes/browser/workbenchThemeService.js';
+import './services/label/common/labelService.js';
+import './services/extensions/common/extensionManifestPropertiesService.js';
+import './services/extensionManagement/common/extensionGalleryService.js';
+import './services/extensionManagement/browser/extensionEnablementService.js';
+import './services/extensionManagement/browser/builtinExtensionsScannerService.js';
+import './services/extensionRecommendations/common/extensionIgnoredRecommendationsService.js';
+import './services/extensionRecommendations/common/workspaceExtensionsConfig.js';
+import './services/extensionManagement/common/extensionFeaturesManagemetService.js';
+import './services/notification/common/notificationService.js';
+import './services/userDataSync/common/userDataSyncUtil.js';
+import './services/userDataProfile/browser/userDataProfileImportExportService.js';
+import './services/userDataProfile/browser/userDataProfileManagement.js';
+import './services/userDataProfile/common/remoteUserDataProfiles.js';
+import './services/remote/common/remoteExplorerService.js';
+import './services/remote/common/remoteExtensionsScanner.js';
+import './services/terminal/common/embedderTerminalService.js';
+import './services/workingCopy/common/workingCopyService.js';
+import './services/workingCopy/common/workingCopyFileService.js';
+import './services/workingCopy/common/workingCopyEditorService.js';
+import './services/filesConfiguration/common/filesConfigurationService.js';
+import './services/views/browser/viewDescriptorService.js';
+import './services/views/browser/viewsService.js';
+import './services/quickinput/browser/quickInputService.js';
+import './services/userDataSync/browser/userDataSyncWorkbenchService.js';
+import './services/authentication/browser/authenticationService.js';
+import './services/authentication/browser/authenticationExtensionsService.js';
+import './services/authentication/browser/authenticationUsageService.js';
+import './services/authentication/browser/authenticationAccessService.js';
+import './services/authentication/browser/authenticationMcpUsageService.js';
+import './services/authentication/browser/authenticationMcpAccessService.js';
+import './services/authentication/browser/authenticationMcpService.js';
+import './services/authentication/browser/dynamicAuthenticationProviderStorageService.js';
+import './services/authentication/browser/authenticationQueryService.js';
+import '../platform/hover/browser/hoverService.js';
+import './services/assignment/common/assignmentService.js';
+import './services/outline/browser/outlineService.js';
+import './services/languageDetection/browser/languageDetectionWorkerServiceImpl.js';
+import '../editor/common/services/languageFeaturesService.js';
+import '../editor/common/services/semanticTokensStylingService.js';
+import '../editor/common/services/treeViewsDndService.js';
+import './services/textMate/browser/textMateTokenizationFeature.contribution.js';
+import './services/treeSitter/browser/treeSitter.contribution.js';
+import './services/userActivity/common/userActivityService.js';
+import './services/userActivity/browser/userActivityBrowser.js';
+import './services/userAttention/browser/userAttentionBrowser.js';
+import './services/editor/browser/editorPaneService.js';
+import './services/editor/common/customEditorLabelService.js';
+import './services/dataChannel/browser/dataChannelService.js';
+import './services/inlineCompletions/common/inlineCompletionsUnification.js';
+import './services/chat/common/chatEntitlementService.js';
 
-  let fetcherData = getFetcherData(currentRouter);
-  currentRouter.initialize();
+import { InstantiationType, registerSingleton } from '../platform/instantiation/common/extensions.js';
+import { GlobalExtensionEnablementService } from '../platform/extensionManagement/common/extensionEnablementService.js';
+import { IAllowedExtensionsService, IGlobalExtensionEnablementService } from '../platform/extensionManagement/common/extensionManagement.js';
+import { ContextViewService } from '../platform/contextview/browser/contextViewService.js';
+import { IContextViewService } from '../platform/contextview/browser/contextView.js';
+import { IListService, ListService } from '../platform/list/browser/listService.js';
+import { MarkerDecorationsService } from '../editor/common/services/markerDecorationsService.js';
+import { IMarkerDecorationsService } from '../editor/common/services/markerDecorations.js';
+import { IMarkerService } from '../platform/markers/common/markers.js';
+import { MarkerService } from '../platform/markers/common/markerService.js';
+import { ContextKeyService } from '../platform/contextkey/browser/contextKeyService.js';
+import { IContextKeyService } from '../platform/contextkey/common/contextkey.js';
+import { ITextResourceConfigurationService } from '../editor/common/services/textResourceConfiguration.js';
+import { TextResourceConfigurationService } from '../editor/common/services/textResourceConfigurationService.js';
+import { IDownloadService } from '../platform/download/common/download.js';
+import { DownloadService } from '../platform/download/common/downloadService.js';
+import { OpenerService } from '../editor/browser/services/openerService.js';
+import { IOpenerService } from '../platform/opener/common/opener.js';
+import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from '../platform/userDataSync/common/ignoredExtensions.js';
+import { ExtensionStorageService, IExtensionStorageService } from '../platform/extensionManagement/common/extensionStorage.js';
+import { IUserDataSyncLogService } from '../platform/userDataSync/common/userDataSync.js';
+import { UserDataSyncLogService } from '../platform/userDataSync/common/userDataSyncLog.js';
+import { AllowedExtensionsService } from '../platform/extensionManagement/common/allowedExtensionsService.js';
+import { IAllowedMcpServersService, IMcpGalleryService } from '../platform/mcp/common/mcpManagement.js';
+import { McpGalleryService } from '../platform/mcp/common/mcpGalleryService.js';
+import { AllowedMcpServersService } from '../platform/mcp/common/allowedMcpServersService.js';
+import { IWebWorkerService } from '../platform/webWorker/browser/webWorkerService.js';
+import { WebWorkerService } from '../platform/webWorker/browser/webWorkerServiceImpl.js';
 
-  function getRouteHelpers(
-    routeId: string,
-    navigationId: number,
-    addHelpers: (routeId: string, helpers: InternalHelpers) => void,
-  ): Helpers {
-    // Internal methods we need access to from the route loader execution
-    let internalHelpers: InternalHelpers = {
-      navigationId,
-      dfd: createDeferred(),
-      stub: jest.fn(),
-    };
-    // Allow the caller to store off the helpers in the right spot so eventual
-    // executions by the router can access the right ones
-    addHelpers(routeId, internalHelpers);
-    gcDfds.add(internalHelpers.dfd);
+registerSingleton(IUserDataSyncLogService, UserDataSyncLogService, InstantiationType.Delayed);
+registerSingleton(IAllowedExtensionsService, AllowedExtensionsService, InstantiationType.Delayed);
+registerSingleton(IIgnoredExtensionsManagementService, IgnoredExtensionsManagementService, InstantiationType.Delayed);
+registerSingleton(IGlobalExtensionEnablementService, GlobalExtensionEnablementService, InstantiationType.Delayed);
+registerSingleton(IExtensionStorageService, ExtensionStorageService, InstantiationType.Delayed);
+registerSingleton(IContextViewService, ContextViewService, InstantiationType.Delayed);
+registerSingleton(IListService, ListService, InstantiationType.Delayed);
+registerSingleton(IMarkerDecorationsService, MarkerDecorationsService, InstantiationType.Delayed);
+registerSingleton(IMarkerService, MarkerService, InstantiationType.Delayed);
+registerSingleton(IContextKeyService, ContextKeyService, InstantiationType.Delayed);
+registerSingleton(ITextResourceConfigurationService, TextResourceConfigurationService, InstantiationType.Delayed);
+registerSingleton(IDownloadService, DownloadService, InstantiationType.Delayed);
+registerSingleton(IOpenerService, OpenerService, InstantiationType.Delayed);
+registerSingleton(IWebWorkerService, WebWorkerService, InstantiationType.Delayed);
+registerSingleton(IMcpGalleryService, McpGalleryService, InstantiationType.Delayed);
+registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, InstantiationType.Delayed);
 
-    async function _redirect(
-      isRejection: boolean,
-      href: string,
-      status = 301,
-      headers = {},
-      shims: string[] = [],
-    ) {
-      let redirectNavigationId = ++guid;
-      activeLoaderType = "navigation";
-      activeLoaderNavigationId = redirectNavigationId;
-      if (status === 307 || status === 308) {
-        activeActionType = "navigation";
-        activeActionNavigationId = redirectNavigationId;
-      }
+//#endregion
 
-      let helpers = getNavigationHelpers(href, redirectNavigationId);
 
-      // Since a redirect kicks off and awaits a new navigation we can't shim
-      // these _after_ the redirect, so we allow the caller to pass in loader
-      // shims with the redirect
-      shims.forEach((routeId) =>
-        shimHelper(helpers.loaders, "navigation", "loader", routeId),
-      );
+//#region --- workbench contributions
 
-      try {
-        let redirectResponse = redirect(href, { status, headers });
-        if (isRejection) {
-          // @ts-ignore
-          await internalHelpers.dfd.reject(redirectResponse);
-        } else {
-          await internalHelpers.dfd.resolve(redirectResponse);
-        }
-        await tick();
-      } catch (e) {}
-      return helpers;
-    }
+// Default Account
+import './services/accounts/common/defaultAccount.js';
 
-    let routeHelpers: Helpers = {
-      get signal() {
-        return internalHelpers._signal!;
-      },
-      // Note: This spread has to come _after_ the above getter, otherwise
-      // we lose the getter nature of it somewhere in the babel/typescript
-      // transform.  Doesn't seem ot be an issue in ts-jest but that's a
-      // bit large of a change to look into at the moment
-      ...internalHelpers,
-      // Public APIs only needed for test execution
-      async resolve(value) {
-        await internalHelpers.dfd.resolve(value);
-      },
-      async reject(value) {
-        try {
-          await internalHelpers.dfd.reject(value);
-        } catch (e) {}
-      },
-      async redirect(href, status = 301, headers = {}, shims = []) {
-        return _redirect(true, href, status, headers, shims);
-      },
-      async redirectReturn(href, status = 301, headers = {}, shims = []) {
-        return _redirect(false, href, status, headers, shims);
-      },
-    };
-    return routeHelpers;
-  }
+// Telemetry
+import './contrib/telemetry/browser/telemetry.contribution.js';
 
-  function getHelpers(
-    matches: AgnosticRouteMatch<string, AgnosticDataRouteObject>[],
-    navigationId: number,
-    addHelpers: (routeId: string, helpers: InternalHelpers) => void,
-  ): Record<string, Helpers> {
-    return matches.reduce(
-      (acc, m) =>
-        Object.assign(acc, {
-          [m.route.id]: getRouteHelpers(m.route.id, navigationId, addHelpers),
-        }),
-      {},
-    );
-  }
+// Preferences
+import './contrib/preferences/browser/preferences.contribution.js';
+import './contrib/preferences/browser/keybindingsEditorContribution.js';
+import './contrib/preferences/browser/preferencesSearch.js';
 
-  let inFlightRoutes: AgnosticDataRouteObject[] | undefined;
-  function _internalSetRoutes(routes: AgnosticDataRouteObject[]) {
-    inFlightRoutes = routes;
-    currentRouter?._internalSetRoutes(routes);
-  }
+// Performance
+import './contrib/performance/browser/performance.contribution.js';
 
-  function getNavigationHelpers(
-    href: string,
-    navigationId: number,
-  ): NavigationHelpers {
-    invariant(
-      currentRouter?.routes,
-      "No currentRouter.routes available in getNavigationHelpers",
-    );
-    let matches = matchRoutes(inFlightRoutes || currentRouter.routes, href);
+// Notebook
+import './contrib/notebook/browser/notebook.contribution.js';
 
-    let loaderHelpers = getHelpers(
-      (matches || []).filter((m) => m.route.loader),
-      navigationId,
-      (routeId, helpers) =>
-        activeHelpers.set(
-          `navigation:${navigationId}:loader:${routeId}`,
-          helpers,
-        ),
-    );
-    let actionHelpers = getHelpers(
-      (matches || []).filter((m) => m.route.action),
-      navigationId,
-      (routeId, helpers) =>
-        activeHelpers.set(
-          `navigation:${navigationId}:action:${routeId}`,
-          helpers,
-        ),
-    );
+// Speech
+import './contrib/speech/browser/speech.contribution.js';
 
-    return {
-      navigationId,
-      loaders: loaderHelpers,
-      actions: actionHelpers,
-    };
-  }
+// Chat
+import './contrib/chat/browser/chat.contribution.js';
+import './contrib/inlineChat/browser/inlineChat.contribution.js';
+import './contrib/mcp/browser/mcp.contribution.js';
+import './contrib/chat/browser/chatSessions.contribution.js';
+import './contrib/chat/browser/chatContext.contribution.js';
 
-  function getFetcherHelpers(
-    key: string,
-    href: string,
-    navigationId: number,
-    opts?: RouterNavigateOptions,
-  ): FetcherHelpers {
-    invariant(
-      currentRouter?.routes,
-      "No currentRouter.routes available in getFetcherHelpers",
-    );
-    let matches = matchRoutes(inFlightRoutes || currentRouter.routes, href);
-    invariant(currentRouter, "No currentRouter available");
-    let search = parsePath(href).search || "";
-    let hasNakedIndexQuery = new URLSearchParams(search)
-      .getAll("index")
-      .some((v) => v === "");
+// Interactive
+import './contrib/interactive/browser/interactive.contribution.js';
 
-    // Let fetcher 404s go right through
-    if (!matches) {
-      return {
-        key,
-        navigationId,
-        get fetcher() {
-          invariant(currentRouter, "No currentRouter available");
-          return currentRouter.getFetcher(key);
-        },
-        loaders: {},
-        actions: {},
-      };
-    }
+// repl
+import './contrib/replNotebook/browser/repl.contribution.js';
 
-    let match =
-      matches[matches.length - 1].route.index && !hasNakedIndexQuery
-        ? matches.slice(-2)[0]
-        : matches.slice(-1)[0];
+// Testing
+import './contrib/testing/browser/testing.contribution.js';
 
-    // If this is an action submission we need loaders for all current matches.
-    // Otherwise we should only need a loader for the leaf match
-    let activeLoaderMatches = [match];
-    // @ts-expect-error
-    if (opts?.formMethod != null && opts.formMethod.toUpperCase() !== "GET") {
-      if (currentRouter.state.navigation?.location) {
-        let matches = matchRoutes(
-          inFlightRoutes || currentRouter.routes,
-          currentRouter.state.navigation.location,
-        );
-        invariant(matches, "No matches found for fetcher");
-        activeLoaderMatches = matches;
-      } else {
-        activeLoaderMatches = currentRouter.state.matches;
-      }
-    }
+// Logs
+import './contrib/logs/common/logs.contribution.js';
 
-    let loaderHelpers = getHelpers(
-      activeLoaderMatches.filter((m) => m.route.loader),
-      navigationId,
-      (routeId, helpers) =>
-        activeHelpers.set(`fetch:${navigationId}:loader:${routeId}`, helpers),
-    );
-    let actionHelpers = getHelpers(
-      match.route.action ? [match] : [],
-      navigationId,
-      (routeId, helpers) =>
-        activeHelpers.set(`fetch:${navigationId}:action:${routeId}`, helpers),
-    );
+// Quickaccess
+import './contrib/quickaccess/browser/quickAccess.contribution.js';
 
-    return {
-      key,
-      navigationId,
-      get fetcher() {
-        invariant(currentRouter, "No currentRouter available");
-        return {
-          ...currentRouter.getFetcher(key),
-          data: fetcherData.get(key),
-        };
-      },
-      loaders: loaderHelpers,
-      actions: actionHelpers,
-    };
-  }
+// Explorer
+import './contrib/files/browser/explorerViewlet.js';
+import './contrib/files/browser/fileActions.contribution.js';
+import './contrib/files/browser/files.contribution.js';
 
-  // Simulate a navigation, returning a series of helpers to manually
-  // control/assert loader/actions
-  function navigate(n: number): Promise<NavigationHelpers>;
-  function navigate(
-    href: string,
-    opts?: RouterNavigateOptions,
-    shims?: string[],
-  ): Promise<NavigationHelpers>;
-  async function navigate(
-    href: number | string,
-    opts?: RouterNavigateOptions,
-    shims?: string[],
-  ): Promise<NavigationHelpers> {
-    let navigationId = ++guid;
-    let helpers: NavigationHelpers;
+// Bulk Edit
+import './contrib/bulkEdit/browser/bulkEditService.js';
+import './contrib/bulkEdit/browser/preview/bulkEdit.contribution.js';
 
-    invariant(currentRouter, "No currentRouter available");
+// Search
+import './contrib/search/browser/search.contribution.js';
+import './contrib/search/browser/searchView.js';
 
-    // @ts-expect-error
-    if (opts?.formMethod != null && opts.formMethod.toUpperCase() !== "GET") {
-      activeActionType = "navigation";
-      activeActionNavigationId = navigationId;
-      // Assume happy path and mark this navigations loaders as active.  Even if
-      // we never call them from the router (if the action rejects) we'll want
-      // this to be accurate so we can assert against the stubs
-      activeLoaderType = "navigation";
-      activeLoaderNavigationId = navigationId;
-    } else {
-      activeLoaderType = "navigation";
-      activeLoaderNavigationId = navigationId;
-    }
+// Search Editor
+import './contrib/searchEditor/browser/searchEditor.contribution.js';
 
-    if (typeof href === "number") {
-      let promise = new Promise<void>((r) => {
-        invariant(currentRouter, "No currentRouter available");
-        let unsubscribe = currentRouter.subscribe(() => {
-          let popHref = history.createHref(history.location);
-          if (currentRouter?.basename) {
-            popHref = stripBasename(popHref, currentRouter.basename) as string;
-            invariant(
-              popHref,
-              "href passed to navigate should start with basename",
-            );
-          }
-          helpers = getNavigationHelpers(popHref, navigationId);
-          unsubscribe();
-          r();
-        });
-      });
-      currentRouter.navigate(href);
-      await promise;
-      //@ts-ignore
-      return helpers;
-    }
+// Sash
+import './contrib/sash/browser/sash.contribution.js';
 
-    helpers = getNavigationHelpers(href, navigationId);
-    shims?.forEach((routeId) =>
-      shimHelper(helpers.loaders, "navigation", "loader", routeId),
-    );
-    currentRouter.navigate(href, opts);
-    return helpers;
-  }
+// SCM
+import './contrib/scm/browser/scm.contribution.js';
 
-  // Simulate a fetcher call, returning a series of helpers to manually
-  // control/assert loader/actions
-  async function fetch(
-    href: string,
-    opts?: RouterFetchOptions,
-  ): Promise<FetcherHelpers>;
-  async function fetch(
-    href: string,
-    key: string,
-    opts?: RouterFetchOptions,
-  ): Promise<FetcherHelpers>;
-  async function fetch(
-    href: string,
-    key: string,
-    routeId: string,
-    opts?: RouterFetchOptions,
-  ): Promise<FetcherHelpers>;
-  async function fetch(
-    href: string,
-    keyOrOpts?: string | RouterFetchOptions,
-    routeIdOrOpts?: string | RouterFetchOptions,
-    opts?: RouterFetchOptions,
-  ): Promise<FetcherHelpers> {
-    let navigationId = ++guid;
-    let key = typeof keyOrOpts === "string" ? keyOrOpts : String(navigationId);
-    let routeId =
-      typeof routeIdOrOpts === "string"
-        ? routeIdOrOpts
-        : String(currentRouter?.routes[0].id);
-    opts =
-      typeof keyOrOpts === "object"
-        ? keyOrOpts
-        : typeof routeIdOrOpts === "object"
-          ? routeIdOrOpts
-          : opts;
-    invariant(currentRouter, "No currentRouter available");
+// Debug
+import './contrib/debug/browser/debug.contribution.js';
+import './contrib/debug/browser/debugEditorContribution.js';
+import './contrib/debug/browser/breakpointEditorContribution.js';
+import './contrib/debug/browser/callStackEditorContribution.js';
+import './contrib/debug/browser/repl.js';
+import './contrib/debug/browser/debugViewlet.js';
 
-    // @ts-expect-error
-    if (opts?.formMethod != null && opts.formMethod.toUpperCase() !== "GET") {
-      activeActionType = "fetch";
-      activeActionFetchId = navigationId;
-    } else {
-      activeLoaderType = "fetch";
-      activeLoaderFetchId = navigationId;
-    }
+// Markers
+import './contrib/markers/browser/markers.contribution.js';
 
-    let helpers = getFetcherHelpers(key, href, navigationId, opts);
-    currentRouter.fetch(key, routeId, href, opts);
-    return helpers;
-  }
+// Process Explorer
+import './contrib/processExplorer/browser/processExplorer.contribution.js';
 
-  // Simulate a revalidation, returning a series of helpers to manually
-  // control/assert loader/actions
-  async function revalidate(
-    type: "navigation" | "fetch" = "navigation",
-    shimRouteId?: string,
-  ): Promise<NavigationHelpers> {
-    invariant(currentRouter, "No currentRouter available");
-    let navigationId;
-    if (type === "fetch") {
-      // This is a special case for when we want to test revalidation against
-      // fetchers, so that our A.loaders.routeId will trigger the fetcher loader,
-      // not the route loader
-      navigationId = ++guid;
-      activeLoaderType = "fetch";
-      activeLoaderFetchId = navigationId;
-    } else {
-      // if a revalidation interrupts an action submission, we don't actually
-      // start a new navigation so don't increment here
-      navigationId =
-        currentRouter.state.navigation.state === "submitting" &&
-        currentRouter.state.navigation.formMethod !== "GET"
-          ? guid
-          : ++guid;
-      activeLoaderType = "navigation";
-      activeLoaderNavigationId = navigationId;
-    }
-    let href = currentRouter.createHref(
-      currentRouter.state.navigation.location || currentRouter.state.location,
-    );
-    let helpers = getNavigationHelpers(href, navigationId);
-    if (shimRouteId) {
-      shimHelper(helpers.loaders, type, "loader", shimRouteId);
-    }
-    currentRouter.revalidate();
-    return helpers;
-  }
+// Merge Editor
+import './contrib/mergeEditor/browser/mergeEditor.contribution.js';
 
-  function shimHelper(
-    navHelpers: Record<string, Helpers>,
-    type: "navigation" | "fetch",
-    type2: "loader" | "action",
-    routeId: string,
-  ) {
-    invariant(!navHelpers[routeId], "Can't overwrite existing helpers");
-    navHelpers[routeId] = getRouteHelpers(routeId, guid, (routeId, helpers) =>
-      activeHelpers.set(`${type}:${guid}:${type2}:${routeId}`, helpers),
-    );
-  }
+// Multi Diff Editor
+import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
 
-  return {
-    window: testWindow,
-    history,
-    router: currentRouter,
-    get fetchers() {
-      let fetchers: Record<string, Fetcher> = {};
-      currentRouter?.state.fetchers.forEach((f, key) => {
-        fetchers[key] = {
-          ...f,
-          data: fetcherData.get(key),
-        };
-      });
-      fetcherData.forEach((data, key) => {
-        if (!fetchers[key]) {
-          fetchers[key] = {
-            ...IDLE_FETCHER,
-            data: fetcherData.get(key),
-          };
-        }
-      });
-      return fetchers;
-    },
-    navigate,
-    fetch,
-    revalidate,
-    shimHelper,
-    enhanceRoutes,
-    _internalSetRoutes,
-  };
-}
+// Commands
+import './contrib/commands/common/commands.contribution.js';
 
-export function cleanup(_router?: Router) {
-  let router = _router || currentRouter;
+// Comments
+import './contrib/comments/browser/comments.contribution.js';
 
-  // Cleanup any routers created using setup()
-  if (router) {
-    expect(router._internalFetchControllers.size).toBe(0);
-  }
-  router?.dispose();
-  currentRouter = null;
+// URL Support
+import './contrib/url/browser/url.contribution.js';
 
-  // Reject any lingering deferreds and remove
-  for (let dfd of gcDfds.values()) {
-    dfd.reject();
-    gcDfds.delete(dfd);
-  }
-  expect(gcDfds.size).toBe(0);
-}
+// Webview
+import './contrib/webview/browser/webview.contribution.js';
+import './contrib/webviewPanel/browser/webviewPanel.contribution.js';
+import './contrib/webviewView/browser/webviewView.contribution.js';
+import './contrib/customEditor/browser/customEditor.contribution.js';
+
+// External Uri Opener
+import './contrib/externalUriOpener/common/externalUriOpener.contribution.js';
+
+// Extensions Management
+import './contrib/extensions/browser/extensions.contribution.js';
+import './contrib/extensions/browser/extensionsViewlet.js';
+
+// Output View
+import './contrib/output/browser/output.contribution.js';
+import './contrib/output/browser/outputView.js';
+
+// Terminal
+import './contrib/terminal/terminal.all.js';
+
+// External terminal
+import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
+
+// Relauncher
+import './contrib/relauncher/browser/relauncher.contribution.js';
+
+// Tasks
+import './contrib/tasks/browser/task.contribution.js';
+
+// Remote
+import './contrib/remote/common/remote.contribution.js';
+import './contrib/remote/browser/remote.contribution.js';
+
+// Emmet
+import './contrib/emmet/browser/emmet.contribution.js';
+
+// CodeEditor Contributions
+import './contrib/codeEditor/browser/codeEditor.contribution.js';
+
+// Markdown
+import './contrib/markdown/browser/markdown.contribution.js';
+
+// Keybindings Contributions
+import './contrib/keybindings/browser/keybindings.contribution.js';
+
+// Snippets
+import './contrib/snippets/browser/snippets.contribution.js';
+
+// Formatter Help
+import './contrib/format/browser/format.contribution.js';
+
+// Folding
+import './contrib/folding/browser/folding.contribution.js';
+
+// Limit Indicator
+import './contrib/limitIndicator/browser/limitIndicator.contribution.js';
+
+// Inlay Hint Accessibility
+import './contrib/inlayHints/browser/inlayHintsAccessibilty.js';
+
+// Themes
+import './contrib/themes/browser/themes.contribution.js';
+
+// Update
+import './contrib/update/browser/update.contribution.js';
+
+// Surveys
+import './contrib/surveys/browser/nps.contribution.js';
+import './contrib/surveys/browser/languageSurveys.contribution.js';
+
+// Welcome
+import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
+import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
+import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
+import './contrib/welcomeViews/common/newFile.contribution.js';
+
+// Call Hierarchy
+import './contrib/callHierarchy/browser/callHierarchy.contribution.js';
+
+// Type Hierarchy
+import './contrib/typeHierarchy/browser/typeHierarchy.contribution.js';
+
+// Outline
+import './contrib/codeEditor/browser/outline/documentSymbolsOutline.js';
+import './contrib/outline/browser/outline.contribution.js';
+
+// Language Detection
+import './contrib/languageDetection/browser/languageDetection.contribution.js';
+
+// Language Status
+import './contrib/languageStatus/browser/languageStatus.contribution.js';
+
+// Authentication
+import './contrib/authentication/browser/authentication.contribution.js';
+
+// User Data Sync
+import './contrib/userDataSync/browser/userDataSync.contribution.js';
+
+// User Data Profiles
+import './contrib/userDataProfile/browser/userDataProfile.contribution.js';
+
+// Continue Edit Session
+import './contrib/editSessions/browser/editSessions.contribution.js';
+
+// Remote Coding Agents
+import './contrib/remoteCodingAgents/browser/remoteCodingAgents.contribution.js';
+
+// Code Actions
+import './contrib/codeActions/browser/codeActions.contribution.js';
+
+// Timeline
+import './contrib/timeline/browser/timeline.contribution.js';
+
+// Local History
+import './contrib/localHistory/browser/localHistory.contribution.js';
+
+// Workspace
+import './contrib/workspace/browser/workspace.contribution.js';
+
+// Workspaces
+import './contrib/workspaces/browser/workspaces.contribution.js';
+
+// List
+import './contrib/list/browser/list.contribution.js';
+
+// Accessibility Signals
+import './contrib/accessibilitySignals/browser/accessibilitySignal.contribution.js';
+
+// Bracket Pair Colorizer 2 Telemetry
+import './contrib/bracketPairColorizer2Telemetry/browser/bracketPairColorizer2Telemetry.contribution.js';
+
+// Accessibility
+import './contrib/accessibility/browser/accessibility.contribution.js';
+
+// Share
+import './contrib/share/browser/share.contribution.js';
+
+// Synchronized Scrolling
+import './contrib/scrollLocking/browser/scrollLocking.contribution.js';
+
+// Inline Completions
+import './contrib/inlineCompletions/browser/inlineCompletions.contribution.js';
+
+// Drop or paste into
+import './contrib/dropOrPasteInto/browser/dropOrPasteInto.contribution.js';
+
+// Edit Telemetry
+import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
+
+// Opener
+import './contrib/opener/browser/opener.contribution.js';
+
+//#endregion

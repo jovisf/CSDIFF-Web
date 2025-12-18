@@ -1,46 +1,82 @@
-import { Dispatch } from 'redux'
+import { useMemo } from 'react';
+import { StylesConfig } from 'react-select';
 
-/**
- * Default Dispatch type accepts any object with `type` property.
- */
-function simple() {
-  const dispatch: Dispatch = null as any
+import { GrafanaTheme2 } from '@grafana/data';
 
-  const a = dispatch({ type: 'INCREMENT', count: 10 })
-
-  a.count
-  // @ts-expect-error
-  a.wrongProp
-
-  // @ts-expect-error
-  dispatch('not-an-action')
+export default function resetSelectStyles(theme: GrafanaTheme2): Partial<StylesConfig> {
+  return {
+    clearIndicator: () => ({}),
+    container: () => ({}),
+    control: () => ({}),
+    dropdownIndicator: () => ({}),
+    group: () => ({}),
+    groupHeading: () => ({}),
+    indicatorsContainer: () => ({}),
+    indicatorSeparator: () => ({}),
+    input: function (originalStyles) {
+      return {
+        ...originalStyles,
+        color: 'inherit',
+        margin: 0,
+        padding: 0,
+        // Set an explicit z-index here to ensure this element always overlays the singleValue
+        zIndex: 1,
+        overflow: 'hidden',
+      };
+    },
+    loadingIndicator: () => ({}),
+    loadingMessage: () => ({}),
+    menu: () => ({}),
+    menuList: ({ maxHeight }) => ({
+      maxHeight,
+    }),
+    multiValue: () => ({}),
+    multiValueLabel: () => ({
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    }),
+    multiValueRemove: () => ({}),
+    noOptionsMessage: () => ({}),
+    option: () => ({}),
+    placeholder: (originalStyles) => ({
+      ...originalStyles,
+      color: theme.colors.text.secondary,
+    }),
+    singleValue: () => ({}),
+    valueContainer: () => ({}),
+  };
 }
 
-/**
- * Dispatch accepts type argument that restricts allowed action types.
- */
-function discriminated() {
-  interface IncrementAction {
-    type: 'INCREMENT'
-    count?: number
-  }
-
-  interface DecrementAction {
-    type: 'DECREMENT'
-    count?: number
-  }
-
-  // Union of all actions in the app.
-  type MyAction = IncrementAction | DecrementAction
-
-  const dispatch: Dispatch<MyAction> = null as any
-
-  dispatch({ type: 'INCREMENT' })
-  dispatch({ type: 'DECREMENT', count: 10 })
-  // Known actions are strictly checked.
-  // @ts-expect-error
-  dispatch({ type: 'DECREMENT', count: '' })
-  // Unknown actions are rejected.
-  // @ts-expect-error
-  dispatch({ type: 'SOME_OTHER_TYPE' })
+export function useCustomSelectStyles(theme: GrafanaTheme2, width: number | string | undefined): Partial<StylesConfig> {
+  return useMemo(() => {
+    return {
+      ...resetSelectStyles(theme),
+      menuPortal: (base) => {
+        // Would like to correct top position when menu is placed bottom, but have props are not sent to this style function.
+        // Only state is. https://github.com/JedWatson/react-select/blob/master/packages/react-select/src/components/Menu.tsx#L605
+        return {
+          ...base,
+          zIndex: theme.zIndex.portal,
+        };
+      },
+      //These are required for the menu positioning to function
+      menu: ({ top, bottom, position }) => {
+        return {
+          top,
+          bottom,
+          position,
+          minWidth: '100%',
+          zIndex: theme.zIndex.dropdown,
+        };
+      },
+      container: () => ({
+        width: width ? theme.spacing(width) : '100%',
+        display: width === 'auto' ? 'inline-flex' : 'flex',
+      }),
+      option: (provided, state) => ({
+        ...provided,
+        opacity: state.isDisabled ? 0.5 : 1,
+      }),
+    };
+  }, [theme, width]);
 }

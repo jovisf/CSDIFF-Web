@@ -1,490 +1,596 @@
-import $$observable from './utils/symbol-observable'
-
+import { inspect, InspectOptions } from 'util';
+import { Injectable, Optional } from '../decorators/core';
+import { clc, yellow, isColorAllowed } from '../utils/cli-colors.util';
 import {
-  Store,
-  StoreEnhancer,
-  Dispatch,
-  Observer,
-  ListenerCallback,
-  UnknownIfNonSpecific
-} from './types/store'
-import { Action } from './types/actions'
-import { Reducer } from './types/reducers'
-import ActionTypes from './utils/actionTypes'
-import isPlainObject from './utils/isPlainObject'
-import { kindOf } from './utils/kindOf'
+  isFunction,
+  isPlainObject,
+  isString,
+  isUndefined,
+} from '../utils/shared.utils';
+import { LoggerService, LogLevel } from './logger.service';
+import { isLogLevelEnabled } from './utils/is-log-level-enabled.util';
+
+const DEFAULT_DEPTH = 5;
 
 /**
- * @deprecated
- *
- * **We recommend using the `configureStore` method
- * of the `@reduxjs/toolkit` package**, which replaces `createStore`.
- *
- * Redux Toolkit is our recommended approach for writing Redux logic today,
- * including store setup, reducers, data fetching, and more.
- *
- * **For more details, please read this Redux docs page:**
- * **https://redux.js.org/introduction/why-rtk-is-redux-today**
- *
- * `configureStore` from Redux Toolkit is an improved version of `createStore` that
- * simplifies setup and helps avoid common bugs.
- *
- * You should not be using the `redux` core package by itself today, except for learning purposes.
- * The `createStore` method from the core `redux` package will not be removed, but we encourage
- * all users to migrate to using Redux Toolkit for all Redux code.
- *
- * If you want to use `createStore` without this visual deprecation warning, use
- * the `legacy_createStore` import instead:
- *
- * `import { legacy_createStore as createStore} from 'redux'`
- *
+ * @publicApi
  */
-export function createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {}
->(
-  reducer: Reducer<S, A>,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext
-/**
- * @deprecated
- *
- * **We recommend using the `configureStore` method
- * of the `@reduxjs/toolkit` package**, which replaces `createStore`.
- *
- * Redux Toolkit is our recommended approach for writing Redux logic today,
- * including store setup, reducers, data fetching, and more.
- *
- * **For more details, please read this Redux docs page:**
- * **https://redux.js.org/introduction/why-rtk-is-redux-today**
- *
- * `configureStore` from Redux Toolkit is an improved version of `createStore` that
- * simplifies setup and helps avoid common bugs.
- *
- * You should not be using the `redux` core package by itself today, except for learning purposes.
- * The `createStore` method from the core `redux` package will not be removed, but we encourage
- * all users to migrate to using Redux Toolkit for all Redux code.
- *
- * If you want to use `createStore` without this visual deprecation warning, use
- * the `legacy_createStore` import instead:
- *
- * `import { legacy_createStore as createStore} from 'redux'`
- *
- */
-export function createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {},
-  PreloadedState = S
->(
-  reducer: Reducer<S, A, PreloadedState>,
-  preloadedState?: PreloadedState | undefined,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext
-export function createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {},
-  PreloadedState = S
->(
-  reducer: Reducer<S, A, PreloadedState>,
-  preloadedState?: PreloadedState | StoreEnhancer<Ext, StateExt> | undefined,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext {
-  if (typeof reducer !== 'function') {
-    throw new Error(
-      `Expected the root reducer to be a function. Instead, received: '${kindOf(
-        reducer
-      )}'`
-    )
-  }
-
-  if (
-    (typeof preloadedState === 'function' && typeof enhancer === 'function') ||
-    (typeof enhancer === 'function' && typeof arguments[3] === 'function')
-  ) {
-    throw new Error(
-      'It looks like you are passing several store enhancers to ' +
-        'createStore(). This is not supported. Instead, compose them ' +
-        'together to a single function. See https://redux.js.org/tutorials/fundamentals/part-4-store#creating-a-store-with-enhancers for an example.'
-    )
-  }
-
-  if (typeof preloadedState === 'function' && typeof enhancer === 'undefined') {
-    enhancer = preloadedState as StoreEnhancer<Ext, StateExt>
-    preloadedState = undefined
-  }
-
-  if (typeof enhancer !== 'undefined') {
-    if (typeof enhancer !== 'function') {
-      throw new Error(
-        `Expected the enhancer to be a function. Instead, received: '${kindOf(
-          enhancer
-        )}'`
-      )
-    }
-
-    return enhancer(createStore)(
-      reducer,
-      preloadedState as PreloadedState | undefined
-    )
-  }
-
-  let currentReducer = reducer
-  let currentState: S | PreloadedState | undefined = preloadedState as
-    | PreloadedState
-    | undefined
-  let currentListeners: Map<number, ListenerCallback> | null = new Map()
-  let nextListeners = currentListeners
-  let listenerIdCounter = 0
-  let isDispatching = false
-
+export interface ConsoleLoggerOptions {
   /**
-   * This makes a shallow copy of currentListeners so we can use
-   * nextListeners as a temporary list while dispatching.
-   *
-   * This prevents any bugs around consumers calling
-   * subscribe/unsubscribe in the middle of a dispatch.
+   * Enabled log levels.
    */
-  function ensureCanMutateNextListeners() {
-    if (nextListeners === currentListeners) {
-      nextListeners = new Map()
-      currentListeners.forEach((listener, key) => {
-        nextListeners.set(key, listener)
-      })
-    }
-  }
-
+  logLevels?: LogLevel[];
   /**
-   * Reads the state tree managed by the store.
-   *
-   * @returns The current state tree of your application.
+   * If enabled, will print timestamp (time difference) between current and previous log message.
+   * Note: This option is not used when `json` is enabled.
    */
-  function getState(): S {
-    if (isDispatching) {
-      throw new Error(
-        'You may not call store.getState() while the reducer is executing. ' +
-          'The reducer has already received the state as an argument. ' +
-          'Pass it down from the top reducer instead of reading it from the store.'
-      )
-    }
-
-    return currentState as S
-  }
-
+  timestamp?: boolean;
   /**
-   * Adds a change listener. It will be called any time an action is dispatched,
-   * and some part of the state tree may potentially have changed. You may then
-   * call `getState()` to read the current state tree inside the callback.
-   *
-   * You may call `dispatch()` from a change listener, with the following
-   * caveats:
-   *
-   * 1. The subscriptions are snapshotted just before every `dispatch()` call.
-   * If you subscribe or unsubscribe while the listeners are being invoked, this
-   * will not have any effect on the `dispatch()` that is currently in progress.
-   * However, the next `dispatch()` call, whether nested or not, will use a more
-   * recent snapshot of the subscription list.
-   *
-   * 2. The listener should not expect to see all state changes, as the state
-   * might have been updated multiple times during a nested `dispatch()` before
-   * the listener is called. It is, however, guaranteed that all subscribers
-   * registered before the `dispatch()` started will be called with the latest
-   * state by the time it exits.
-   *
-   * @param listener A callback to be invoked on every dispatch.
-   * @returns A function to remove this change listener.
+   * A prefix to be used for each log message.
+   * Note: This option is not used when `json` is enabled.
    */
-  function subscribe(listener: () => void) {
-    if (typeof listener !== 'function') {
-      throw new Error(
-        `Expected the listener to be a function. Instead, received: '${kindOf(
-          listener
-        )}'`
-      )
-    }
-
-    if (isDispatching) {
-      throw new Error(
-        'You may not call store.subscribe() while the reducer is executing. ' +
-          'If you would like to be notified after the store has been updated, subscribe from a ' +
-          'component and invoke store.getState() in the callback to access the latest state. ' +
-          'See https://redux.js.org/api/store#subscribelistener for more details.'
-      )
-    }
-
-    let isSubscribed = true
-
-    ensureCanMutateNextListeners()
-    const listenerId = listenerIdCounter++
-    nextListeners.set(listenerId, listener)
-
-    return function unsubscribe() {
-      if (!isSubscribed) {
-        return
-      }
-
-      if (isDispatching) {
-        throw new Error(
-          'You may not unsubscribe from a store listener while the reducer is executing. ' +
-            'See https://redux.js.org/api/store#subscribelistener for more details.'
-        )
-      }
-
-      isSubscribed = false
-
-      ensureCanMutateNextListeners()
-      nextListeners.delete(listenerId)
-      currentListeners = null
-    }
-  }
-
+  prefix?: string;
   /**
-   * Dispatches an action. It is the only way to trigger a state change.
-   *
-   * The `reducer` function, used to create the store, will be called with the
-   * current state tree and the given `action`. Its return value will
-   * be considered the **next** state of the tree, and the change listeners
-   * will be notified.
-   *
-   * The base implementation only supports plain object actions. If you want to
-   * dispatch a Promise, an Observable, a thunk, or something else, you need to
-   * wrap your store creating function into the corresponding middleware. For
-   * example, see the documentation for the `redux-thunk` package. Even the
-   * middleware will eventually dispatch plain object actions using this method.
-   *
-   * @param action A plain object representing “what changed”. It is
-   * a good idea to keep actions serializable so you can record and replay user
-   * sessions, or use the time travelling `redux-devtools`. An action must have
-   * a `type` property which may not be `undefined`. It is a good idea to use
-   * string constants for action types.
-   *
-   * @returns For convenience, the same action object you dispatched.
-   *
-   * Note that, if you use a custom middleware, it may wrap `dispatch()` to
-   * return something else (for example, a Promise you can await).
+   * If enabled, will print the log message in JSON format.
    */
-  function dispatch(action: A) {
-    if (!isPlainObject(action)) {
-      throw new Error(
-        `Actions must be plain objects. Instead, the actual type was: '${kindOf(
-          action
-        )}'. You may need to add middleware to your store setup to handle dispatching other values, such as 'redux-thunk' to handle dispatching functions. See https://redux.js.org/tutorials/fundamentals/part-4-store#middleware and https://redux.js.org/tutorials/fundamentals/part-6-async-logic#using-the-redux-thunk-middleware for examples.`
-      )
-    }
-
-    if (typeof action.type === 'undefined') {
-      throw new Error(
-        'Actions may not have an undefined "type" property. You may have misspelled an action type string constant.'
-      )
-    }
-
-    if (typeof action.type !== 'string') {
-      throw new Error(
-        `Action "type" property must be a string. Instead, the actual type was: '${kindOf(
-          action.type
-        )}'. Value was: '${action.type}' (stringified)`
-      )
-    }
-
-    if (isDispatching) {
-      throw new Error('Reducers may not dispatch actions.')
-    }
-
-    try {
-      isDispatching = true
-      currentState = currentReducer(currentState, action)
-    } finally {
-      isDispatching = false
-    }
-
-    const listeners = (currentListeners = nextListeners)
-    listeners.forEach(listener => {
-      listener()
-    })
-    return action
-  }
-
+  json?: boolean;
   /**
-   * Replaces the reducer currently used by the store to calculate the state.
-   *
-   * You might need this if your app implements code splitting and you want to
-   * load some of the reducers dynamically. You might also need this if you
-   * implement a hot reloading mechanism for Redux.
-   *
-   * @param nextReducer The reducer for the store to use instead.
+   * If enabled, will print the log message in color.
+   * Default true if json is disabled, false otherwise
    */
-  function replaceReducer(nextReducer: Reducer<S, A>): void {
-    if (typeof nextReducer !== 'function') {
-      throw new Error(
-        `Expected the nextReducer to be a function. Instead, received: '${kindOf(
-          nextReducer
-        )}`
-      )
-    }
-
-    currentReducer = nextReducer as unknown as Reducer<S, A, PreloadedState>
-
-    // This action has a similar effect to ActionTypes.INIT.
-    // Any reducers that existed in both the new and old rootReducer
-    // will receive the previous state. This effectively populates
-    // the new state tree with any relevant data from the old one.
-    dispatch({ type: ActionTypes.REPLACE } as A)
-  }
-
+  colors?: boolean;
   /**
-   * Interoperability point for observable/reactive libraries.
-   * @returns A minimal observable of state changes.
-   * For more information, see the observable proposal:
-   * https://github.com/tc39/proposal-observable
+   * The context of the logger.
    */
-  function observable() {
-    const outerSubscribe = subscribe
-    return {
-      /**
-       * The minimal observable subscription method.
-       * @param observer Any object that can be used as an observer.
-       * The observer object should have a `next` method.
-       * @returns An object with an `unsubscribe` method that can
-       * be used to unsubscribe the observable from the store, and prevent further
-       * emission of values from the observable.
-       */
-      subscribe(observer: unknown) {
-        if (typeof observer !== 'object' || observer === null) {
-          throw new TypeError(
-            `Expected the observer to be an object. Instead, received: '${kindOf(
-              observer
-            )}'`
-          )
-        }
-
-        function observeState() {
-          const observerAsObserver = observer as Observer<S>
-          if (observerAsObserver.next) {
-            observerAsObserver.next(getState())
-          }
-        }
-
-        observeState()
-        const unsubscribe = outerSubscribe(observeState)
-        return { unsubscribe }
-      },
-
-      [$$observable]() {
-        return this
-      }
-    }
-  }
-
-  // When a store is created, an "INIT" action is dispatched so that every
-  // reducer returns their initial state. This effectively populates
-  // the initial state tree.
-  dispatch({ type: ActionTypes.INIT } as A)
-
-  const store = {
-    dispatch: dispatch as Dispatch<A>,
-    subscribe,
-    getState,
-    replaceReducer,
-    [$$observable]: observable
-  } as unknown as Store<S, A, StateExt> & Ext
-  return store
+  context?: string;
+  /**
+   * If enabled, will print the log message in a single line, even if it is an object with multiple properties.
+   * If set to a number, the most n inner elements are united on a single line as long as all properties fit into breakLength. Short array elements are also grouped together.
+   * Default true when `json` is enabled, false otherwise.
+   */
+  compact?: boolean | number;
+  /**
+   * Specifies the maximum number of Array, TypedArray, Map, Set, WeakMap, and WeakSet elements to include when formatting.
+   * Set to null or Infinity to show all elements. Set to 0 or negative to show no elements.
+   * Ignored when `json` is enabled, colors are disabled, and `compact` is set to true as it produces a parseable JSON output.
+   * @default 100
+   */
+  maxArrayLength?: number;
+  /**
+   * Specifies the maximum number of characters to include when formatting.
+   * Set to null or Infinity to show all elements. Set to 0 or negative to show no characters.
+   * Ignored when `json` is enabled, colors are disabled, and `compact` is set to true as it produces a parseable JSON output.
+   * @default 10000.
+   */
+  maxStringLength?: number;
+  /**
+   * If enabled, will sort keys while formatting objects.
+   * Can also be a custom sorting function.
+   * Ignored when `json` is enabled, colors are disabled, and `compact` is set to true as it produces a parseable JSON output.
+   * @default false
+   */
+  sorted?: boolean | ((a: string, b: string) => number);
+  /**
+   * Specifies the number of times to recurse while formatting object.
+   * This is useful for inspecting large objects. To recurse up to the maximum call stack size pass Infinity or null.
+   * Ignored when `json` is enabled, colors are disabled, and `compact` is set to true as it produces a parseable JSON output.
+   * @default 5
+   */
+  depth?: number;
+  /**
+   * If true, object's non-enumerable symbols and properties are included in the formatted result.
+   * WeakMap and WeakSet entries are also included as well as user defined prototype properties
+   * @default false
+   */
+  showHidden?: boolean;
+  /**
+   * The length at which input values are split across multiple lines. Set to Infinity to format the input as a single line (in combination with "compact" set to true).
+   * Default Infinity when "compact" is true, 80 otherwise.
+   * Ignored when `json` is enabled, colors are disabled, and `compact` is set to true as it produces a parseable JSON output.
+   */
+  breakLength?: number;
 }
 
+const DEFAULT_LOG_LEVELS: LogLevel[] = [
+  'log',
+  'error',
+  'warn',
+  'debug',
+  'verbose',
+  'fatal',
+];
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+  day: '2-digit',
+  month: '2-digit',
+});
+
 /**
- * Creates a Redux store that holds the state tree.
- *
- * **We recommend using `configureStore` from the
- * `@reduxjs/toolkit` package**, which replaces `createStore`:
- * **https://redux.js.org/introduction/why-rtk-is-redux-today**
- *
- * The only way to change the data in the store is to call `dispatch()` on it.
- *
- * There should only be a single store in your app. To specify how different
- * parts of the state tree respond to actions, you may combine several reducers
- * into a single reducer function by using `combineReducers`.
- *
- * @param {Function} reducer A function that returns the next state tree, given
- * the current state tree and the action to handle.
- *
- * @param {any} [preloadedState] The initial state. You may optionally specify it
- * to hydrate the state from the server in universal apps, or to restore a
- * previously serialized user session.
- * If you use `combineReducers` to produce the root reducer function, this must be
- * an object with the same shape as `combineReducers` keys.
- *
- * @param {Function} [enhancer] The store enhancer. You may optionally specify it
- * to enhance the store with third-party capabilities such as middleware,
- * time travel, persistence, etc. The only store enhancer that ships with Redux
- * is `applyMiddleware()`.
- *
- * @returns {Store} A Redux store that lets you read the state, dispatch actions
- * and subscribe to changes.
+ * @publicApi
  */
-export function legacy_createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {}
->(
-  reducer: Reducer<S, A>,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext
-/**
- * Creates a Redux store that holds the state tree.
- *
- * **We recommend using `configureStore` from the
- * `@reduxjs/toolkit` package**, which replaces `createStore`:
- * **https://redux.js.org/introduction/why-rtk-is-redux-today**
- *
- * The only way to change the data in the store is to call `dispatch()` on it.
- *
- * There should only be a single store in your app. To specify how different
- * parts of the state tree respond to actions, you may combine several reducers
- * into a single reducer function by using `combineReducers`.
- *
- * @param {Function} reducer A function that returns the next state tree, given
- * the current state tree and the action to handle.
- *
- * @param {any} [preloadedState] The initial state. You may optionally specify it
- * to hydrate the state from the server in universal apps, or to restore a
- * previously serialized user session.
- * If you use `combineReducers` to produce the root reducer function, this must be
- * an object with the same shape as `combineReducers` keys.
- *
- * @param {Function} [enhancer] The store enhancer. You may optionally specify it
- * to enhance the store with third-party capabilities such as middleware,
- * time travel, persistence, etc. The only store enhancer that ships with Redux
- * is `applyMiddleware()`.
- *
- * @returns {Store} A Redux store that lets you read the state, dispatch actions
- * and subscribe to changes.
- */
-export function legacy_createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {},
-  PreloadedState = S
->(
-  reducer: Reducer<S, A, PreloadedState>,
-  preloadedState?: PreloadedState | undefined,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext
-export function legacy_createStore<
-  S,
-  A extends Action,
-  Ext extends {} = {},
-  StateExt extends {} = {},
-  PreloadedState = S
->(
-  reducer: Reducer<S, A>,
-  preloadedState?: PreloadedState | StoreEnhancer<Ext, StateExt> | undefined,
-  enhancer?: StoreEnhancer<Ext, StateExt>
-): Store<S, A, UnknownIfNonSpecific<StateExt>> & Ext {
-  return createStore(reducer, preloadedState as any, enhancer)
+@Injectable()
+export class ConsoleLogger implements LoggerService {
+  /**
+   * The options of the logger.
+   */
+  protected options: ConsoleLoggerOptions;
+  /**
+   * The context of the logger (can be set manually or automatically inferred).
+   */
+  protected context?: string;
+  /**
+   * The original context of the logger (set in the constructor).
+   */
+  protected originalContext?: string;
+  /**
+   * The options used for the "inspect" method.
+   */
+  protected inspectOptions: InspectOptions;
+  /**
+   * The last timestamp at which the log message was printed.
+   */
+  protected static lastTimestampAt?: number;
+
+  constructor();
+  constructor(context: string);
+  constructor(options: ConsoleLoggerOptions);
+  constructor(context: string, options: ConsoleLoggerOptions);
+  constructor(
+    @Optional()
+    contextOrOptions?: string | ConsoleLoggerOptions,
+    @Optional()
+    options?: ConsoleLoggerOptions,
+  ) {
+    // eslint-disable-next-line prefer-const
+    let [context, opts] = isString(contextOrOptions)
+      ? [contextOrOptions, options]
+      : options
+        ? [undefined, options]
+        : [contextOrOptions?.context, contextOrOptions];
+
+    opts = opts ?? {};
+    opts.logLevels ??= DEFAULT_LOG_LEVELS;
+    opts.colors ??= opts.colors ?? (opts.json ? false : isColorAllowed());
+    opts.prefix ??= 'Nest';
+
+    this.options = opts;
+    this.inspectOptions = this.getInspectOptions();
+
+    if (context) {
+      this.context = context;
+      this.originalContext = context;
+    }
+  }
+
+  /**
+   * Write a 'log' level log, if the configured level allows for it.
+   * Prints to `stdout` with newline.
+   */
+  log(message: any, context?: string): void;
+  log(message: any, ...optionalParams: [...any, string?]): void;
+  log(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('log')) {
+      return;
+    }
+    const { messages, context } = this.getContextAndMessagesToPrint([
+      message,
+      ...optionalParams,
+    ]);
+    this.printMessages(messages, context, 'log');
+  }
+
+  /**
+   * Write an 'error' level log, if the configured level allows for it.
+   * Prints to `stderr` with newline.
+   */
+  error(message: any, stackOrContext?: string): void;
+  error(message: any, stack?: string, context?: string): void;
+  error(message: any, ...optionalParams: [...any, string?, string?]): void;
+  error(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('error')) {
+      return;
+    }
+    const { messages, context, stack } =
+      this.getContextAndStackAndMessagesToPrint([message, ...optionalParams]);
+
+    this.printMessages(messages, context, 'error', 'stderr', stack);
+    this.printStackTrace(stack!);
+  }
+
+  /**
+   * Write a 'warn' level log, if the configured level allows for it.
+   * Prints to `stdout` with newline.
+   */
+  warn(message: any, context?: string): void;
+  warn(message: any, ...optionalParams: [...any, string?]): void;
+  warn(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('warn')) {
+      return;
+    }
+    const { messages, context } = this.getContextAndMessagesToPrint([
+      message,
+      ...optionalParams,
+    ]);
+    this.printMessages(messages, context, 'warn');
+  }
+
+  /**
+   * Write a 'debug' level log, if the configured level allows for it.
+   * Prints to `stdout` with newline.
+   */
+  debug(message: any, context?: string): void;
+  debug(message: any, ...optionalParams: [...any, string?]): void;
+  debug(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('debug')) {
+      return;
+    }
+    const { messages, context } = this.getContextAndMessagesToPrint([
+      message,
+      ...optionalParams,
+    ]);
+    this.printMessages(messages, context, 'debug');
+  }
+
+  /**
+   * Write a 'verbose' level log, if the configured level allows for it.
+   * Prints to `stdout` with newline.
+   */
+  verbose(message: any, context?: string): void;
+  verbose(message: any, ...optionalParams: [...any, string?]): void;
+  verbose(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('verbose')) {
+      return;
+    }
+    const { messages, context } = this.getContextAndMessagesToPrint([
+      message,
+      ...optionalParams,
+    ]);
+    this.printMessages(messages, context, 'verbose');
+  }
+
+  /**
+   * Write a 'fatal' level log, if the configured level allows for it.
+   * Prints to `stdout` with newline.
+   */
+  fatal(message: any, context?: string): void;
+  fatal(message: any, ...optionalParams: [...any, string?]): void;
+  fatal(message: any, ...optionalParams: any[]) {
+    if (!this.isLevelEnabled('fatal')) {
+      return;
+    }
+    const { messages, context } = this.getContextAndMessagesToPrint([
+      message,
+      ...optionalParams,
+    ]);
+    this.printMessages(messages, context, 'fatal');
+  }
+
+  /**
+   * Set log levels
+   * @param levels log levels
+   */
+  setLogLevels(levels: LogLevel[]) {
+    if (!this.options) {
+      this.options = {};
+    }
+    this.options.logLevels = levels;
+  }
+
+  /**
+   * Set logger context
+   * @param context context
+   */
+  setContext(context: string) {
+    this.context = context;
+  }
+
+  /**
+   * Resets the logger context to the value that was passed in the constructor.
+   */
+  resetContext() {
+    this.context = this.originalContext;
+  }
+
+  isLevelEnabled(level: LogLevel): boolean {
+    const logLevels = this.options?.logLevels;
+    return isLogLevelEnabled(level, logLevels);
+  }
+
+  protected getTimestamp(): string {
+    return dateTimeFormatter.format(Date.now());
+  }
+
+  protected printMessages(
+    messages: unknown[],
+    context = '',
+    logLevel: LogLevel = 'log',
+    writeStreamType?: 'stdout' | 'stderr',
+    errorStack?: unknown,
+  ) {
+    messages.forEach(message => {
+      if (this.options.json) {
+        this.printAsJson(message, {
+          context,
+          logLevel,
+          writeStreamType,
+          errorStack,
+        });
+        return;
+      }
+      const pidMessage = this.formatPid(process.pid);
+      const contextMessage = this.formatContext(context);
+      const timestampDiff = this.updateAndGetTimestampDiff();
+      const formattedLogLevel = logLevel.toUpperCase().padStart(7, ' ');
+      const formattedMessage = this.formatMessage(
+        logLevel,
+        message,
+        pidMessage,
+        formattedLogLevel,
+        contextMessage,
+        timestampDiff,
+      );
+
+      process[writeStreamType ?? 'stdout'].write(formattedMessage);
+    });
+  }
+
+  protected printAsJson(
+    message: unknown,
+    options: {
+      context: string;
+      logLevel: LogLevel;
+      writeStreamType?: 'stdout' | 'stderr';
+      errorStack?: unknown;
+    },
+  ) {
+    const logObject = this.getJsonLogObject(message, options);
+    const formattedMessage =
+      !this.options.colors && this.inspectOptions.compact === true
+        ? JSON.stringify(logObject, this.stringifyReplacer)
+        : inspect(logObject, this.inspectOptions);
+    process[options.writeStreamType ?? 'stdout'].write(`${formattedMessage}\n`);
+  }
+
+  protected getJsonLogObject(
+    message: unknown,
+    options: {
+      context: string;
+      logLevel: LogLevel;
+      writeStreamType?: 'stdout' | 'stderr';
+      errorStack?: unknown;
+    },
+  ) {
+    type JsonLogObject = {
+      level: LogLevel;
+      pid: number;
+      timestamp: number;
+      message: unknown;
+      context?: string;
+      stack?: unknown;
+    };
+
+    const logObject: JsonLogObject = {
+      level: options.logLevel,
+      pid: process.pid,
+      timestamp: Date.now(),
+      message,
+    };
+
+    if (options.context) {
+      logObject.context = options.context;
+    }
+
+    if (options.errorStack) {
+      logObject.stack = options.errorStack;
+    }
+    return logObject;
+  }
+
+  protected formatPid(pid: number) {
+    return `[${this.options.prefix}] ${pid}  - `;
+  }
+
+  protected formatContext(context: string): string {
+    if (!context) {
+      return '';
+    }
+
+    context = `[${context}] `;
+    return this.options.colors ? yellow(context) : context;
+  }
+
+  protected formatMessage(
+    logLevel: LogLevel,
+    message: unknown,
+    pidMessage: string,
+    formattedLogLevel: string,
+    contextMessage: string,
+    timestampDiff: string,
+  ) {
+    const output = this.stringifyMessage(message, logLevel);
+    pidMessage = this.colorize(pidMessage, logLevel);
+    formattedLogLevel = this.colorize(formattedLogLevel, logLevel);
+    return `${pidMessage}${this.getTimestamp()} ${formattedLogLevel} ${contextMessage}${output}${timestampDiff}\n`;
+  }
+
+  protected stringifyMessage(message: unknown, logLevel: LogLevel) {
+    if (isFunction(message)) {
+      const messageAsStr = Function.prototype.toString.call(message);
+      const isClass = messageAsStr.startsWith('class ');
+      if (isClass) {
+        // If the message is a class, we will display the class name.
+        return this.stringifyMessage(message.name, logLevel);
+      }
+      // If the message is a non-class function, call it and re-resolve its value.
+      return this.stringifyMessage(message(), logLevel);
+    }
+
+    if (typeof message === 'string') {
+      return this.colorize(message, logLevel);
+    }
+
+    const outputText = inspect(message, this.inspectOptions);
+    if (isPlainObject(message)) {
+      return `Object(${Object.keys(message).length}) ${outputText}`;
+    }
+    if (Array.isArray(message)) {
+      return `Array(${message.length}) ${outputText}`;
+    }
+    return outputText;
+  }
+
+  protected colorize(message: string, logLevel: LogLevel) {
+    if (!this.options.colors || this.options.json) {
+      return message;
+    }
+    const color = this.getColorByLogLevel(logLevel);
+    return color(message);
+  }
+
+  protected printStackTrace(stack: string) {
+    if (!stack || this.options.json) {
+      return;
+    }
+    process.stderr.write(`${stack}\n`);
+  }
+
+  protected updateAndGetTimestampDiff(): string {
+    const includeTimestamp =
+      ConsoleLogger.lastTimestampAt && this.options?.timestamp;
+    const result = includeTimestamp
+      ? this.formatTimestampDiff(Date.now() - ConsoleLogger.lastTimestampAt!)
+      : '';
+    ConsoleLogger.lastTimestampAt = Date.now();
+    return result;
+  }
+
+  protected formatTimestampDiff(timestampDiff: number) {
+    const formattedDiff = ` +${timestampDiff}ms`;
+    return this.options.colors ? yellow(formattedDiff) : formattedDiff;
+  }
+
+  protected getInspectOptions() {
+    let breakLength = this.options.breakLength;
+    if (typeof breakLength === 'undefined') {
+      breakLength = this.options.colors
+        ? this.options.compact
+          ? Infinity
+          : undefined
+        : this.options.compact === false
+          ? undefined
+          : Infinity; // default breakLength to Infinity if inline is not set and colors is false
+    }
+
+    const inspectOptions: InspectOptions = {
+      depth: this.options.depth ?? DEFAULT_DEPTH,
+      sorted: this.options.sorted,
+      showHidden: this.options.showHidden,
+      compact: this.options.compact ?? (this.options.json ? true : false),
+      colors: this.options.colors,
+      breakLength,
+    };
+
+    if (this.options.maxArrayLength) {
+      inspectOptions.maxArrayLength = this.options.maxArrayLength;
+    }
+    if (this.options.maxStringLength) {
+      inspectOptions.maxStringLength = this.options.maxStringLength;
+    }
+
+    return inspectOptions;
+  }
+
+  protected stringifyReplacer(key: string, value: unknown) {
+    // Mimic util.inspect behavior for JSON logger with compact on and colors off
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    if (typeof value === 'symbol') {
+      return value.toString();
+    }
+
+    if (
+      value instanceof Map ||
+      value instanceof Set ||
+      value instanceof Error
+    ) {
+      return `${inspect(value, this.inspectOptions)}`;
+    }
+    return value;
+  }
+
+  private getContextAndMessagesToPrint(args: unknown[]) {
+    if (args?.length <= 1) {
+      return { messages: args, context: this.context };
+    }
+    const lastElement = args[args.length - 1];
+    const isContext = isString(lastElement);
+    if (!isContext) {
+      return { messages: args, context: this.context };
+    }
+    return {
+      context: lastElement,
+      messages: args.slice(0, args.length - 1),
+    };
+  }
+
+  private getContextAndStackAndMessagesToPrint(args: unknown[]) {
+    if (args.length === 2) {
+      return this.isStackFormat(args[1])
+        ? {
+            messages: [args[0]],
+            stack: args[1] as string,
+            context: this.context,
+          }
+        : {
+            messages: [args[0]],
+            context: args[1] as string,
+          };
+    }
+
+    const { messages, context } = this.getContextAndMessagesToPrint(args);
+    if (messages?.length <= 1) {
+      return { messages, context };
+    }
+    const lastElement = messages[messages.length - 1];
+    const isStack = isString(lastElement);
+    // https://github.com/nestjs/nest/issues/11074#issuecomment-1421680060
+    if (!isStack && !isUndefined(lastElement)) {
+      return { messages, context };
+    }
+    return {
+      stack: lastElement,
+      messages: messages.slice(0, messages.length - 1),
+      context,
+    };
+  }
+
+  private isStackFormat(stack: unknown) {
+    if (!isString(stack) && !isUndefined(stack)) {
+      return false;
+    }
+
+    return /^(.)+\n\s+at .+:\d+:\d+/.test(stack!);
+  }
+
+  private getColorByLogLevel(level: LogLevel) {
+    switch (level) {
+      case 'debug':
+        return clc.magentaBright;
+      case 'warn':
+        return clc.yellow;
+      case 'error':
+        return clc.red;
+      case 'verbose':
+        return clc.cyanBright;
+      case 'fatal':
+        return clc.bold;
+      default:
+        return clc.green;
+    }
+  }
 }

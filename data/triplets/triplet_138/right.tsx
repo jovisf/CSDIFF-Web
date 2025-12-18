@@ -1,13 +1,10 @@
-import * as React from 'react';
-import TextareaAutosize from '@mui/material/TextareaAutosize';
+import React from 'react';
 
-export default function MinHeightTextarea() {
+export default function HomePage() {
   return (
-    <TextareaAutosize
-      aria-label="minimum height"
-      minRows={3}
-      placeholder="Minimum 3 rows"
-      style={{ width: 200 }}
-    />
+    <div>
+      <h1>Zion Tech Group</h1>
+      <p>Advanced technology solutions for modern businesses.</p>
+    </div>
   );
 }

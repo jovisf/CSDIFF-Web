@@ -57,40 +57,34 @@ typescript:
 # TSX/REACT (.tsx)
 # ============================================================
 tsx:
-  - name: nextjs
-    url: https://github.com/vercel/next.js
+  - name: Messanger
+    url: https://github.com/Vladimirzhil/Messanger
     description: "Next.js React framework - 118k+ stars"
     stars: 118000
     language: TypeScript/TSX
 
-  - name: material-ui
-    url: https://github.com/mui/material-ui
+  - name: shputnik
+    url: https://github.com/insuby/shputnik
     description: "Material-UI components - 90k+ stars"
     stars: 90000
     language: TypeScript/TSX
 
-  - name: ant-design
-    url: https://github.com/ant-design/ant-design
+  - name: hopOasis_fr
+    url: https://github.com/hopOasis/hopOasis_fr
     description: "Ant Design UI - 89k+ stars"
     stars: 89000
     language: TypeScript/TSX
 
-  - name: chakra-ui
-    url: https://github.com/chakra-ui/chakra-ui
+  - name: rfobaden-incident-manager
+    url: https://github.com/christiangemesi/rfobaden-incident-manager
     description: "Chakra UI components - 35k+ stars"
     stars: 35000
     language: TypeScript/TSX
 
-  - name: react-native
-    url: https://github.com/facebook/react-native
+  - name: sitecore-demo
+    url: https://github.com/vercel-saleseng/sitecore-demo
     description: "React Native - 114k+ stars"
     stars: 114000
-    language: TypeScript/TSX
-
-  - name: expo
-    url: https://github.com/expo/expo
-    description: "Expo framework - 28k+ stars"
-    stars: 28000
     language: TypeScript/TSX
 
 # ============================================================
@@ -137,26 +131,32 @@ javascript:
 # JSX/REACT (.jsx)
 # ============================================================
 jsx:
-  - name: react-router
-    url: https://github.com/remix-run/react-router
+  - name: zion.app
+    url: https://github.com/Zion-Holdings/zion.app
     description: "React Router - 51k+ stars"
     stars: 51000
     language: JavaScript/JSX
 
-  - name: redux
-    url: https://github.com/reduxjs/redux
+  - name: united-team-finally-project-front-end
+    url: https://github.com/bohdan-miskov/united-team-finally-project-front-end
     description: "Redux state management - 60k+ stars"
     stars: 60000
     language: JavaScript/JSX
 
-  - name: create-react-app
-    url: https://github.com/facebook/create-react-app
+  - name: online_store
+    url: https://github.com/Kvitkovo/online_store
     description: "Create React App - 101k+ stars"
     stars: 101000
     language: JavaScript/JSX
 
-  - name: gatsby
-    url: https://github.com/gatsbyjs/gatsby
+  - name: e-learning-website
+    url: https://github.com/e-learning-team/e-learning-website
+    description: "Gatsby static site generator - 55k+ stars"
+    stars: 55000
+    language: JavaScript/JSX
+
+  - name: DeliveryOracleFront
+    url: https://github.com/Aristia0930/DeliveryOracleFront
     description: "Gatsby static site generator - 55k+ stars"
     stars: 55000
     language: JavaScript/JSX

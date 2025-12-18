@@ -1,12 +1,13 @@
 Triplet ID: 5
-Original File: packages/react-router/lib/context.ts
-Extension: .ts
-Commit SHA: 112589a91cef6c9ba32341101599a79e7588d445
-Base SHA: 13abd8084ad3b829d8182c7180b3f3cc55e1d565
-Left SHA: 0715840b2c60cfc8d555c3ed87db154e437279cf
-Right SHA: c2cb6013d35565f3f5920366a60d4a444a347ef3
+Original File: app/components/OptimizedImage.tsx
+Extension: .tsx
+Commit SHA: 43c86c8eea45490162c82983426d68c942eda852
+Base SHA: e3ecd2b177ac30be6ba18d93f304f6a050761bcc
+Left SHA: 6ceef80961eb0978415e08dd42dca4da7cb6d057
+Right SHA: 1d7719c0c25d0b9d36f642a6a8652caac6784de1
 
 File Sizes:
-  Base: 8181 bytes
-  Left: 8302 bytes
-  Right: 8278 bytes
+  Base:   2420 bytes
+  Left:   2479 bytes
+  Right:  2411 bytes
+  Merged: 2479 bytes (GABARITO)

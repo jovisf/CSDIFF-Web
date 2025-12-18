@@ -1,88 +1,80 @@
-(taes) C:\Users\luiza\CSDIFF-Web>python scripts/analyze_results.py data/results/results_20251215_074220.csv
+(taes) C:\Users\luiza\repos\CSDIFF-Web>python scripts/analyze_results.py --input data/results/results_20251217_202537.csv
 ============================================================
-ANÁLISE DE RESULTADOS - CSDiff-Web
+ANÁLISE DE RESULTADOS - EXPERIMENTO DE MERGE
 ============================================================
-CSV:    data\results\results_20251215_074220.csv
-Output: data\reports
-============================================================
-
-Carregando dados...
-Calculando métricas...
-
-============================================================
-ANÁLISE ESTATÍSTICA - CSDiff-Web
-============================================================
-Total de triplas: 184
-
-============================================================
-FALSE POSITIVES / FALSE NEGATIVES
+Input (CSV): data\results\results_20251217_202537.csv
+Output Dir:  data\reports
 ============================================================
 
-CSDIFF-WEB (baseline: slow-diff3):
-  True Positives:  91
-  False Positives: 1
-  True Negatives:  58
-  False Negatives: 32
+[1/3] Carregando e processando dados...
+[2/3] Calculando métricas e classificações...
 
-  Precision: 0.989
-  Recall:    0.740
-  F1-Score:  0.847
-  Accuracy:  0.819
+================================================================================
+RELATÓRIO DE EXPERIMENTOS (Total de Triplas: 240)
+================================================================================
+
+1. PERFORMANCE INDIVIDUAL (Ferramenta vs Gabarito)
+--------------------------------------------------------------------------------
+FERRAMENTA      | SUCESSO (Correto)  | ERRO (Incorreto)   | CONFLITO   | FALHA
+--------------------------------------------------------------------------------
+CSDIFF-WEB      |  193 ( 80.4%)    |    0 (  0.0%)    |   47 (19.6%) |    0
+MERGIRAF        |  193 ( 80.4%)    |    1 (  0.4%)    |   46 (19.2%) |    0
+SLOW-DIFF3      |  193 ( 80.4%)    |    2 (  0.8%)    |   39 (16.2%) |    6
+--------------------------------------------------------------------------------
+* Sucesso: Merge automático idêntico ao gabarito.
+* Erro: Merge automático diferente do gabarito (Silent Mismerge).
+* Conflito: Ferramenta desistiu e reportou conflito.
+
+
+2. COMPARAÇÕES PAR A PAR (Melhoria Relativa)
+--------------------------------------------------------------------------------
+
+[CSDIFF-WEB vs MERGIRAF]
+  FP Adicional (csdiff-web conflitou, mergiraf acertou): 0
+  FN Adicional (csdiff-web errou, mergiraf conflitou):   0
+  Ambos Corretos:                              193
+
+[CSDIFF-WEB vs SLOW-DIFF3]
+  FP Adicional (csdiff-web conflitou, slow-diff3 acertou): 0
+  FN Adicional (csdiff-web errou, slow-diff3 conflitou):   0
+  Ambos Corretos:                              193
+
+[MERGIRAF vs CSDIFF-WEB]
+  FP Adicional (mergiraf conflitou, csdiff-web acertou): 0
+  FN Adicional (mergiraf errou, csdiff-web conflitou):   1
+  Ambos Corretos:                              193
+
+[MERGIRAF vs SLOW-DIFF3]
+  FP Adicional (mergiraf conflitou, slow-diff3 acertou): 0
+  FN Adicional (mergiraf errou, slow-diff3 conflitou):   0
+  Ambos Corretos:                              193
+
+[SLOW-DIFF3 vs CSDIFF-WEB]
+  FP Adicional (slow-diff3 conflitou, csdiff-web acertou): 0
+  FN Adicional (slow-diff3 errou, csdiff-web conflitou):   2
+  Ambos Corretos:                              193
+
+[SLOW-DIFF3 vs MERGIRAF]
+  FP Adicional (slow-diff3 conflitou, mergiraf acertou): 0
+  FN Adicional (slow-diff3 errou, mergiraf conflitou):   1
+  Ambos Corretos:                              193
+
+
+3. TEMPO MÉDIO DE EXECUÇÃO (s)
+--------------------------------------------------------------------------------
+CSDIFF-WEB     : 0.1420s
+MERGIRAF       : 0.0798s
+SLOW-DIFF3     : 2.3770s
+================================================================================
+
+[3/3] Gerando arquivos de relatório...
 
 ============================================================
-COMPARAÇÃO DE CONFLITOS
+PROCESSO CONCLUÍDO
+============================================================
+📄 Relatório Markdown: data\reports\analysis_20251217_204628.md
+📄 Tabela LaTeX:      data\reports\table_individual_performance_20251217_204628.tex
 ============================================================
 
-CSDIFF-WEB:
-  Total de triplas:     182
-  Com conflito:         92 (50.5%)
-  Sem conflito:         90
-
-DIFF3:
-  Total de triplas:     184
-  Com conflito:         182 (98.9%)
-  Sem conflito:         2
-
-SLOW-DIFF3:
-  Total de triplas:     184
-  Com conflito:         125 (67.9%)
-  Sem conflito:         59
-
-REDUÇÃO (CSDiff-Web vs slow-diff3):
-  Absoluta: 33 conflitos
-  Relativa: 26.4%
-
-============================================================
-TEMPO DE EXECUÇÃO
-============================================================
-
-CSDIFF-WEB:
-  Média:   0.1336s
-  Mediana: 0.1005s
-  Min/Max: 0.0465s / 1.4018s
-
-DIFF3:
-  Média:   0.1977s
-  Mediana: 0.1732s
-  Min/Max: 0.1561s / 0.3664s
-
-SLOW-DIFF3:
-  Média:   0.1444s
-  Mediana: 0.0984s
-  Min/Max: 0.0833s / 2.1202s
-
-============================================================
-
-Gerando relatórios...
-
-============================================================
-RELATÓRIOS GERADOS
-============================================================
-Markdown: data\reports\analysis_20251215_074252.md
-LaTeX:    data\reports\table_20251215_074252.tex
-============================================================
-
-✅ Análise concluída!
-
-Para ver o relatório:
-  cat data\reports\analysis_20251215_074252.md
+Para visualizar o relatório formatado:
+  cat data\reports\analysis_20251217_204628.md

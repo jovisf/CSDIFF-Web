@@ -1,12 +1,13 @@
 Triplet ID: 4
-Original File: packages/react-router-dev/config/config.ts
-Extension: .ts
-Commit SHA: 5cae3b5fd10e6da90758a6ddf7753ba4684d918f
-Base SHA: 4a5e3332aa20cdf7011d5ebd17c9b78a18123f5b
-Left SHA: 1954672a29b0adab00531e62dc5dc5627b560a80
-Right SHA: 77d22facf73ac0092d46d1d099c73ef759a5ba29
+Original File: app/components/LazyImage.tsx
+Extension: .tsx
+Commit SHA: 43c86c8eea45490162c82983426d68c942eda852
+Base SHA: e3ecd2b177ac30be6ba18d93f304f6a050761bcc
+Left SHA: 6ceef80961eb0978415e08dd42dca4da7cb6d057
+Right SHA: 1d7719c0c25d0b9d36f642a6a8652caac6784de1
 
 File Sizes:
-  Base: 29792 bytes
-  Left: 29881 bytes
-  Right: 29881 bytes
+  Base:   2590 bytes
+  Left:   2761 bytes
+  Right:  2673 bytes
+  Merged: 2686 bytes (GABARITO)

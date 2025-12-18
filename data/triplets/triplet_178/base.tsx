@@ -1,88 +1,34 @@
-import * as React from 'react';
-import { addPropertyControls, ControlType } from 'framer';
-// tslint:disable-next-line: ban-ts-ignore
-// @ts-ignore
-import MuiFab from '@material-ui/core/Fab';
-import { Icon } from './Icon';
+'use client';
+<<<<<<< HEAD
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';;
 
-interface Props {
-  color?: 'default' | 'inherit' | 'primary' | 'secondary';
-  disabled?: boolean;
-  href?: string;
-  size?: 'small' | 'medium' | 'large';
-  variant?: 'round' | 'extended';
-  icon?: string;
-  iconTheme?: 'Filled' | 'Outlined' | 'Rounded' | 'TwoTone' | 'Sharp';
-  label?: string;
-  width?: number;
-  height?: number;
-}
+=======
 
-const defaultProps: Props = {
-  color: 'default',
-  disabled: false,
-  size: 'large',
-  variant: 'round',
-  icon: 'add',
-  iconTheme: 'Filled',
-  label: 'extended',
-  width: 56,
-  height: 56,
-};
-
-export const Fab: React.SFC<Props> = (props: Props) => {
-  const { height, icon, label, iconTheme, variant, width, ...other } = props;
+import Head from 'next/head';
+import Link from 'next/link';
+import { ArrowRight, } from 'lucide-react';
+>>>>>>> origin/main
+export default function ZionCustomerSatisfactionMonitorPage() {
   return (
-    <MuiFab variant={variant} {...other}>
-      <Icon
-        icon={icon}
-        theme={iconTheme}
-        // tslint:disable-next-line: ban-ts-ignore
-        // @ts-ignore
-        style={variant === 'extended' ? { marginRight: 8 } : {}}
-      />
-      {variant === 'extended' ? label : null}
-    </MuiFab>
+      <>
+      <Head>
+        <title>Zion Customer Satisfaction Monitor - Zion Tech Group</title>
+        <meta name="description" content="Professional services by Zion Tech Group." />
+      </Head>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <h1>Zion Customer Satisfaction Monitor - Zion Tech Group</h1>
+          <p>Professional zion customer satisfaction monitor - zion tech group services coming soon.</p>
+          <Link href="/contact"
+            className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-cyan-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center mx-auto w-fit"
+          >
+            Contact Us
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Link>
+        </div>
+      </div>
+    </>
   );
-};
-
-Fab.defaultProps = defaultProps;
-
-addPropertyControls(Fab, {
-  color: {
-    type: ControlType.Enum,
-    title: 'Color',
-    options: ['default', 'inherit', 'primary', 'secondary'],
-  },
-  disabled: {
-    type: ControlType.Boolean,
-    title: 'Disabled',
-  },
-  href: {
-    type: ControlType.String,
-    title: 'Href',
-  },
-  size: {
-    type: ControlType.Enum,
-    title: 'Size',
-    options: ['small', 'medium', 'large'],
-  },
-  variant: {
-    type: ControlType.Enum,
-    title: 'Variant',
-    options: ['round', 'extended'],
-  },
-  icon: {
-    type: ControlType.String,
-    title: 'Icon',
-  },
-  iconTheme: {
-    type: ControlType.Enum,
-    title: 'Icon theme',
-    options: ['Filled', 'Outlined', 'Rounded', 'TwoTone', 'Sharp'],
-  },
-  label: {
-    type: ControlType.String,
-    title: 'Label',
-  },
-});
+}

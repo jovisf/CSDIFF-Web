@@ -1,6 +1,6 @@
 """
 Orquestrador de experimentos.
-Executa CSDiff-Web + diff3 + slow-diff3 em triplas mineradas.
+Executa CSDiff-Web + mergiraf + slow-diff3 em triplas mineradas.
 
 Este é o módulo principal do Runner. Ele:
 1. Carrega triplas do diretório data/triplets/
@@ -66,20 +66,7 @@ class ExperimentRunner:
             max_triplets: Máximo de triplas a carregar (None = todas)
 
         Returns:
-            Lista de triplas:
-            [
-                {
-                    'id': 'triplet_001',
-                    'dir': Path('data/triplets/triplet_001'),
-                    'metadata': {...},
-                    'base': str,
-                    'left': str,
-                    'right': str,
-                    'extension': str,
-                    'filepath': str
-                },
-                ...
-            ]
+            Lista de triplas.
         """
         triplets = []
 
@@ -124,11 +111,12 @@ class ExperimentRunner:
         Returns:
             Dict com dados da tripla, ou None se erro
         """
-        # Procurar arquivos base, left, right
+        # Procurar arquivos base, left, right, merged
         # Podem ter extensões diferentes (.ts, .tsx, .js, .jsx)
         base_files = list(triplet_dir.glob("base.*"))
         left_files = list(triplet_dir.glob("left.*"))
         right_files = list(triplet_dir.glob("right.*"))
+        merged_files = list(triplet_dir.glob("merged.*"))
 
         if not base_files or not left_files or not right_files:
             logger.warning(f"{triplet_dir.name}: arquivos incompletos")
@@ -137,15 +125,23 @@ class ExperimentRunner:
         base_file = base_files[0]
         left_file = left_files[0]
         right_file = right_files[0]
+        merged_file = merged_files[0] if merged_files else None
 
         # Extensão
         extension = base_file.suffix
 
-        # Carregar conteúdos
+        # Carregar conteúdos (base, left, right, merged)
         try:
             base_content = base_file.read_text(encoding='utf-8')
             left_content = left_file.read_text(encoding='utf-8')
             right_content = right_file.read_text(encoding='utf-8')
+
+            # Carregar merged se existir (GABARITO)
+            merged_content = None
+            if merged_file and merged_file.exists():
+                merged_content = merged_file.read_text(encoding='utf-8')
+            else:
+                logger.warning(f"{triplet_dir.name}: arquivo merged não encontrado (tripla antiga)")
         except Exception as e:
             logger.error(f"Erro ao ler arquivos de {triplet_dir.name}: {e}")
             return None
@@ -163,36 +159,28 @@ class ExperimentRunner:
             'base': base_content,
             'left': left_content,
             'right': right_content,
+            'merged': merged_content,  # GABARITO (resultado real do merge)
             'extension': extension,
             'filepath': metadata.get('Original File', ''),
             'base_file': base_file,
             'left_file': left_file,
-            'right_file': right_file
+            'right_file': right_file,
+            'merged_file': merged_file
         }
 
     def _parse_metadata(self, metadata_file: Path) -> Dict:
         """
         Parse arquivo metadata.txt.
-
-        Args:
-            metadata_file: Path do metadata.txt
-
-        Returns:
-            Dict com metadata parseado
         """
         metadata = {}
-
         try:
             lines = metadata_file.read_text(encoding='utf-8').split('\n')
-
             for line in lines:
                 if ':' in line:
                     key, value = line.split(':', 1)
                     metadata[key.strip()] = value.strip()
-
         except Exception as e:
             logger.warning(f"Erro ao parsear metadata: {e}")
-
         return metadata
 
     def run_experiments(
@@ -206,13 +194,7 @@ class ExperimentRunner:
             max_triplets: Máximo de triplas a processar (None = todas)
 
         Returns:
-            Dict com resultados:
-            {
-                'triplets_processed': int,
-                'csv_path': Path,
-                'summary_path': Path,
-                'metrics': {...}
-            }
+            Dict com resultados.
         """
 
         # Carregar triplas
@@ -263,7 +245,7 @@ class ExperimentRunner:
         Args:
             triplet: Dict com dados da tripla
         """
-        # Executar ferramentas
+        # Executar ferramentas (CSDiff, Mergiraf, Slow-diff3)
         tool_results = self.executor.execute_all(
             base=triplet['base'],
             left=triplet['left'],
@@ -275,11 +257,12 @@ class ExperimentRunner:
             right_file=triplet.get('right_file')
         )
 
-        # Coletar resultados
+        # Coletar resultados (incluindo merged content como gabarito)
         self.collector.add_result(
             triplet_id=triplet['id'],
             triplet_metadata=triplet['metadata'],
-            tool_results=tool_results
+            tool_results=tool_results,
+            merged_content=triplet.get('merged')  # GABARITO
         )
 
     def get_statistics(self) -> Dict:
